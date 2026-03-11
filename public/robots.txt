@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /
+Allow: /login
+
+# Block protected portals from being indexed
+Disallow: /superadmin
+Disallow: /schooladmin
+Disallow: /teacher
+Disallow: /student
+Disallow: /student/exam/
+
+# Sitemap location
+Sitemap: https://artificial798.github.io/examportal/sitemap.xml
