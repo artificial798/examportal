@@ -3,16 +3,18 @@ import { useNavigate } from 'react-router-dom';
 import {
   Users, GraduationCap, BookOpen, BarChart3, LogOut,
   PlusCircle, Search, Trash2, X, AlertTriangle, CheckCircle2,
-  Building2, UserPlus, FileText, Clock
+  Building2, UserPlus, FileText, Clock, Sparkles, Plus, FilePlus, Download, BarChart2
 } from 'lucide-react';
 import {
   collection, getDocs, addDoc, deleteDoc, doc,
-  query, where, serverTimestamp, setDoc
+  query, where, serverTimestamp, setDoc, updateDoc
 } from 'firebase/firestore';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { db, auth } from '../../firebase/config';
 import { useAuth } from '../../contexts/AuthContext';
 import { signOut } from 'firebase/auth';
+import AIQuestionGenerator from '../../components/AIQuestionGenerator';
+import { downloadDetailedResult, downloadClassMarksheet, downloadSubjectReport } from '../../services/pdfService';
 
 /* ──────────────── SHARED HELPERS ──────────────── */
 function Toast({ msg, type, onClose }) {
@@ -346,11 +348,240 @@ function OverviewTab({ school, teacherCount, studentCount }) {
   );
 }
 
+/* ──────────────── CREATE EXAM TAB (School Admin) ──────────────── */
+function CreateExamTab({ schoolId, schoolSubjects, showToast }) {
+  const [form, setForm] = useState({ title:'', subject:'', duration:60, instructions:'', passingMarks:40 });
+  const [questions, setQuestions] = useState([{ text:'', options:['','','',''], correctAnswer:'' }]);
+  const [saving, setSaving] = useState(false);
+  const [showAI, setShowAI] = useState(false);
+
+  const handleAIInsert = (aiQs) => {
+    setQuestions(prev => { const c = prev.filter(q=>q.text.trim()); return [...c,...aiQs]; });
+    setShowAI(false);
+  };
+  const updateQ = (qi,field,val) => setQuestions(qs=>qs.map((q,i)=>i===qi?{...q,[field]:val}:q));
+  const updateOpt = (qi,oi,val) => setQuestions(qs=>qs.map((q,i)=>i===qi?{...q,options:q.options.map((o,j)=>j===oi?val:o)}:q));
+  const addQ = () => setQuestions(qs=>[...qs,{text:'',options:['','','',''],correctAnswer:''}]);
+  const removeQ = (qi) => setQuestions(qs=>qs.filter((_,i)=>i!==qi));
+
+  const handlePublish = async (status) => {
+    if (!form.title.trim()) { showToast('Enter exam title.','error'); return; }
+    setSaving(true);
+    try {
+      await addDoc(collection(db,'exams'), { ...form, schoolId, questions, status, createdAt:serverTimestamp() });
+      showToast(status==='Active'?'Exam published!':'Draft saved.','success');
+      setForm({title:'',subject:'',duration:60,instructions:'',passingMarks:40});
+      setQuestions([{text:'',options:['','','',''],correctAnswer:''}]);
+    } catch(e){ showToast('Error: '+e.message,'error'); }
+    setSaving(false);
+  };
+
+  return (
+    <div className="animate-fade-in">
+      <h2 style={{fontSize:'1.2rem',marginBottom:4}}>Create Exam</h2>
+      <p style={{fontSize:'0.85rem',marginBottom:'1.25rem'}}>Build exam questions manually or use AI to generate them instantly.</p>
+
+      <div className="card" style={{padding:'1.5rem',marginBottom:'1.25rem'}}>
+        <h3 style={{fontSize:'0.9rem',marginBottom:'1rem',color:'var(--accent-blue)'}}>📋 Exam Details</h3>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'1rem',marginBottom:'1rem'}}>
+          <div><label className="input-label">Exam Title *</label><input required className="input-field" value={form.title} onChange={e=>setForm({...form,title:e.target.value})} placeholder="Final Science Exam"/></div>
+          <div><label className="input-label">Subject</label>
+            <select className="input-field" value={form.subject} onChange={e=>setForm({...form,subject:e.target.value})}>
+              <option value="">Select Subject</option>
+              {(schoolSubjects||[]).map(s=><option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'1rem',marginBottom:'1rem'}}>
+          <div><label className="input-label">Duration (mins)</label><input type="number" className="input-field" value={form.duration} onChange={e=>setForm({...form,duration:Number(e.target.value)})}/></div>
+          <div><label className="input-label">Passing Marks (%)</label><input type="number" className="input-field" value={form.passingMarks} onChange={e=>setForm({...form,passingMarks:Number(e.target.value)})}/></div>
+        </div>
+        <div><label className="input-label">Instructions</label><textarea className="input-field" rows={2} value={form.instructions} onChange={e=>setForm({...form,instructions:e.target.value})} placeholder="Read carefully…"/></div>
+      </div>
+
+      <div style={{marginBottom:'1.25rem'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1rem'}}>
+          <h3 style={{fontSize:'0.95rem'}}>Questions ({questions.length})</h3>
+          <div style={{display:'flex',gap:8}}>
+            <button className="btn btn-ghost btn-sm" onClick={()=>setShowAI(true)} style={{color:'var(--accent-purple)',borderColor:'var(--accent-purple)',background:'var(--accent-purple-light)',gap:5}}>
+              <Sparkles size={15}/> AI Generate
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={addQ}><Plus size={15}/> Add</button>
+          </div>
+        </div>
+        {questions.map((q,qi)=>(
+          <div key={qi} className="card" style={{padding:'1.25rem',marginBottom:'1rem',borderLeft:'3px solid var(--accent-blue)'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.75rem'}}>
+              <span style={{fontSize:'0.85rem',fontWeight:700,color:'var(--accent-blue)'}}>Q{qi+1}</span>
+              {questions.length>1&&<button className="btn btn-ghost btn-icon btn-sm" style={{color:'var(--accent-rose)'}} onClick={()=>removeQ(qi)}><Trash2 size={14}/></button>}
+            </div>
+            <div style={{marginBottom:'0.75rem'}}><label className="input-label">Question Text *</label><textarea className="input-field" rows={2} value={q.text} onChange={e=>updateQ(qi,'text',e.target.value)} placeholder="Type question here…"/></div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.75rem',marginBottom:'0.75rem'}}>
+              {q.options.map((opt,oi)=>(<div key={oi}><label className="input-label">Option {String.fromCharCode(65+oi)}</label><input className="input-field" value={opt} onChange={e=>updateOpt(qi,oi,e.target.value)} placeholder={`Option ${String.fromCharCode(65+oi)}`}/></div>))}
+            </div>
+            <div><label className="input-label">Correct Answer</label>
+              <select className="input-field" value={q.correctAnswer} onChange={e=>updateQ(qi,'correctAnswer',e.target.value)}>
+                <option value="">— Select correct —</option>
+                {q.options.filter(o=>o.trim()).map((opt,oi)=>(<option key={oi} value={opt}>{String.fromCharCode(65+oi)}. {opt}</option>))}
+              </select>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{display:'flex',gap:12,justifyContent:'flex-end'}}>
+        <button className="btn btn-ghost" onClick={()=>handlePublish('Draft')} disabled={saving}>Save Draft</button>
+        <button className="btn btn-primary" onClick={()=>handlePublish('Active')} disabled={saving}>{saving?'Publishing…':'🚀 Publish'}</button>
+      </div>
+
+      {showAI && <AIQuestionGenerator defaultSubject={form.subject} onInsert={handleAIInsert} onClose={()=>setShowAI(false)}/>}
+    </div>
+  );
+}
+
+/* ──────────────── MARKSHEET / RESULTS TAB ──────────────── */
+function MarksheetTab({ schoolId, schoolName }) {
+  const [results,      setResults]      = useState([]);
+  const [exams,        setExams]        = useState([]);
+  const [loading,      setLoading]      = useState(true);
+  const [filterClass,  setFilterClass]  = useState('');
+  const [filterSubject,setFilterSubject]= useState('');
+  const [filterExam,   setFilterExam]   = useState('all');
+
+  useEffect(() => {
+    if (!schoolId) return;
+    (async () => {
+      const [rSnap, eSnap] = await Promise.all([
+        getDocs(query(collection(db,'results'), where('schoolId','==',schoolId))),
+        getDocs(query(collection(db,'exams'),   where('schoolId','==',schoolId))),
+      ]);
+      setResults(rSnap.docs.map(d=>({id:d.id,...d.data()})));
+      setExams(eSnap.docs.map(d=>({id:d.id,...d.data()})));
+      setLoading(false);
+    })();
+  }, [schoolId]);
+
+  const classes  = [...new Set(results.map(r=>r.class).filter(Boolean))].sort();
+  const subjects = [...new Set(results.map(r=>r.subject).filter(Boolean))].sort();
+
+  const filtered = results.filter(r =>
+    (filterClass   === '' || (r.class||'').toLowerCase()   === filterClass.toLowerCase()) &&
+    (filterSubject === '' || (r.subject||'').toLowerCase() === filterSubject.toLowerCase()) &&
+    (filterExam === 'all' || r.examId === filterExam)
+  );
+
+  const avg    = filtered.length ? Math.round(filtered.reduce((s,r)=>s+(r.percentage||0),0)/filtered.length) : 0;
+  const passed = filtered.filter(r=>(r.percentage||0)>=40).length;
+
+  return (
+    <div className="animate-fade-in">
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'1.25rem', flexWrap:'wrap', gap:'1rem' }}>
+        <div>
+          <h2 style={{ fontSize:'1.2rem', marginBottom:4 }}>Results & Marksheets</h2>
+          <p style={{ fontSize:'0.85rem' }}>Download individual result PDFs or bulk class/subject marksheets.</p>
+        </div>
+        <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+          <button className="btn btn-ghost btn-sm"
+            onClick={() => downloadClassMarksheet(filtered, filterClass, filterSubject, schoolName)}
+            disabled={filtered.length===0}
+            style={{ color:'var(--accent-purple)', borderColor:'var(--accent-purple)', background:'var(--accent-purple-light)', gap:5 }}>
+            <Download size={14}/> Class Marksheet PDF
+          </button>
+          <button className="btn btn-ghost btn-sm"
+            onClick={() => downloadSubjectReport(filtered, schoolName)}
+            disabled={filtered.length===0}
+            style={{ color:'var(--accent-blue)', borderColor:'var(--accent-blue)', background:'var(--accent-blue-light)', gap:5 }}>
+            <BarChart2 size={14}/> Subject Report PDF
+          </button>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div style={{ display:'flex', gap:'0.75rem', marginBottom:'1.25rem', flexWrap:'wrap' }}>
+        <select className="input-field" style={{ flex:1, minWidth:160 }} value={filterClass} onChange={e=>setFilterClass(e.target.value)}>
+          <option value="">All Classes</option>
+          {classes.map(c=><option key={c} value={c}>{c}</option>)}
+        </select>
+        <select className="input-field" style={{ flex:1, minWidth:160 }} value={filterSubject} onChange={e=>setFilterSubject(e.target.value)}>
+          <option value="">All Subjects</option>
+          {subjects.map(s=><option key={s} value={s}>{s}</option>)}
+        </select>
+        <select className="input-field" style={{ flex:1, minWidth:180 }} value={filterExam} onChange={e=>setFilterExam(e.target.value)}>
+          <option value="all">All Exams</option>
+          {exams.map(e=><option key={e.id} value={e.id}>{e.title}</option>)}
+        </select>
+      </div>
+
+      {/* Stats */}
+      {filtered.length > 0 && (
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))', gap:'1rem', marginBottom:'1.25rem' }}>
+          {[
+            {label:'Submissions', value:filtered.length,                          color:'var(--accent-blue)'   },
+            {label:'Avg Score',   value:`${avg}%`,                               color:'var(--accent-purple)' },
+            {label:'Passed',      value:passed,                                   color:'var(--accent-emerald)'},
+            {label:'Failed',      value:filtered.length-passed,                  color:'var(--accent-rose)'   },
+            {label:'Pass Rate',   value:`${filtered.length?Math.round(passed/filtered.length*100):0}%`, color:'var(--accent-amber)'},
+          ].map(s=>(
+            <div key={s.label} className="card" style={{ padding:'1rem', textAlign:'center' }}>
+              <div style={{ fontSize:'1.6rem', fontWeight:800, fontFamily:'Space Grotesk', color:s.color, marginBottom:4 }}>{s.value}</div>
+              <div style={{ fontSize:'0.75rem', fontWeight:600 }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Table */}
+      <div className="card" style={{ overflow:'hidden' }}>
+        {loading ? <div style={{ padding:'2rem', textAlign:'center' }}>Loading…</div> : (
+          <table className="data-table">
+            <thead><tr><th>Student</th><th>Class</th><th>Exam</th><th>Subject</th><th>Score</th><th>%</th><th>Grade</th><th>Result</th><th>Date</th><th>PDF</th></tr></thead>
+            <tbody>
+              {filtered.length===0 && <tr><td colSpan={10}><div className="empty-state"><BarChart2 size={36}/><p>No results match the current filter.</p></div></td></tr>}
+              {[...filtered].sort((a,b)=>(b.percentage||0)-(a.percentage||0)).map(r=>{
+                const pass = (r.percentage||0)>=40;
+                const pct  = r.percentage||0;
+                const grade = pct>=90?'A+':pct>=80?'A':pct>=70?'B+':pct>=60?'B':pct>=50?'C':pct>=40?'D':'F';
+                return (
+                  <tr key={r.id}>
+                    <td>
+                      <div style={{ fontWeight:600 }}>{r.studentName||'—'}</div>
+                      <div style={{ fontSize:'0.72rem', color:'var(--text-muted)' }}>{r.rollNo ? `Roll: ${r.rollNo}` : ''}</div>
+                    </td>
+                    <td style={{ fontSize:'0.82rem' }}>{r.class||'—'}</td>
+                    <td style={{ fontSize:'0.8rem', maxWidth:120 }}>{r.examTitle||'—'}</td>
+                    <td><span className="badge purple">{r.subject||'—'}</span></td>
+                    <td style={{ fontWeight:700 }}>{r.score||0}/{r.totalMarks||0}</td>
+                    <td>
+                      <span style={{ fontWeight:700, color:pass?'var(--accent-emerald)':'var(--accent-rose)' }}>{pct}%</span>
+                    </td>
+                    <td>
+                      <span style={{ fontWeight:800, fontSize:'0.95rem', color:['A+','A'].includes(grade)?'var(--accent-emerald)':grade==='F'?'var(--accent-rose)':'var(--accent-blue)' }}>{grade}</span>
+                    </td>
+                    <td><span className={`badge ${pass?'success':'danger'}`}>{pass?'Pass':'Fail'}</span></td>
+                    <td style={{ fontSize:'0.75rem', color:'var(--text-muted)' }}>{r.submittedAt?.toDate?r.submittedAt.toDate().toLocaleDateString('en-IN'):'—'}</td>
+                    <td>
+                      <button className="btn btn-ghost btn-icon btn-sm" title="Detailed Result PDF" onClick={()=>downloadDetailedResult(r)} style={{ color:'var(--accent-blue)' }}>
+                        <FileText size={15}/>
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ──────────────── MAIN COMPONENT ──────────────── */
 const TABS = [
-  { id:'overview',  label:'Overview',  icon:BarChart3   },
-  { id:'teachers',  label:'Teachers',  icon:GraduationCap },
-  { id:'students',  label:'Students',  icon:Users        },
+  { id:'overview',   label:'Overview',    icon:BarChart3     },
+  { id:'teachers',   label:'Teachers',    icon:GraduationCap },
+  { id:'students',   label:'Students',    icon:Users          },
+  { id:'create',     label:'Create Exam', icon:FilePlus       },
+  { id:'marksheet',  label:'Results',     icon:FileText       },
 ];
 
 export default function SchoolAdminDashboard() {
@@ -446,9 +677,11 @@ export default function SchoolAdminDashboard() {
           </div>
 
           <div className="page-content">
-            {activeTab === 'overview'  && <OverviewTab school={school} teacherCount={teacherCount} studentCount={studentCount}/>}
-            {activeTab === 'teachers'  && <TeachersTab schoolId={school?.id} schoolSubjects={school?.subjects} showToast={showToast}/>}
-            {activeTab === 'students'  && <StudentsTab schoolId={school?.id} schoolSubjects={school?.subjects} showToast={showToast}/>}
+            {activeTab === 'overview'   && <OverviewTab school={school} teacherCount={teacherCount} studentCount={studentCount}/>}
+            {activeTab === 'teachers'   && <TeachersTab schoolId={school?.id} schoolSubjects={school?.subjects} showToast={showToast}/>}
+            {activeTab === 'students'   && <StudentsTab schoolId={school?.id} schoolSubjects={school?.subjects} showToast={showToast}/>}
+            {activeTab === 'create'     && <CreateExamTab schoolId={school?.id} schoolSubjects={school?.subjects} showToast={showToast}/>}
+            {activeTab === 'marksheet'  && <MarksheetTab schoolId={school?.id} schoolName={school?.name||''}/>}
           </div>
         </main>
       </div>

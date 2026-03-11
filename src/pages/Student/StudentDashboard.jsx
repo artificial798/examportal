@@ -28,10 +28,23 @@ export default function StudentDashboard() {
         const userData = userDoc.exists() ? userDoc.data() : {};
         const schoolId = userData.schoolId;
 
-        // Load active exams for this school
+        // Load exams for this school — filter Active + class in JS (avoids Firestore composite index requirement)
         if (schoolId) {
           const snap = await getDocs(query(collection(db,'exams'), where('schoolId','==',schoolId)));
-          setExams(snap.docs.map(d => ({ id:d.id, ...d.data() })));
+          const stuData      = stuSnap.empty ? {} : stuSnap.docs[0].data();
+          const studentClass = (stuData.class || userData.class || '').trim().toLowerCase();
+
+          const filtered = snap.docs
+            .map(d => ({ id:d.id, ...d.data() }))
+            .filter(exam => {
+              // Must be Active
+              if (exam.status !== 'Active') return false;
+              // targetClass blank = show to all; otherwise must match student class
+              const tc = (exam.targetClass || '').trim().toLowerCase();
+              return tc === '' || tc === studentClass;
+            });
+
+          setExams(filtered);
         }
 
         // Load student's submitted results
