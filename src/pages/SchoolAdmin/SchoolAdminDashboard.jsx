@@ -351,27 +351,35 @@ function OverviewTab({ school, teacherCount, studentCount }) {
 /* ──────────────── CREATE EXAM TAB (School Admin) ──────────────── */
 function CreateExamTab({ schoolId, schoolSubjects, showToast }) {
   const [form, setForm] = useState({ title:'', subject:'', duration:60, instructions:'', passingMarks:40 });
-  const [questions, setQuestions] = useState([{ text:'', options:['','','',''], correctAnswer:'' }]);
+  const [questions, setQuestions] = useState([{ text:'', options:['','','',''], correctAnswer:'', marks: 1 }]);
   const [saving, setSaving] = useState(false);
   const [showAI, setShowAI] = useState(false);
 
   const handleAIInsert = (aiQs) => {
-    setQuestions(prev => { const c = prev.filter(q=>q.text.trim()); return [...c,...aiQs]; });
+    const mappedAiQs = aiQs.map(q => ({ ...q, marks: 1 }));
+    setQuestions(prev => { const c = prev.filter(q=>q.text.trim()); return [...c, ...mappedAiQs]; });
     setShowAI(false);
   };
   const updateQ = (qi,field,val) => setQuestions(qs=>qs.map((q,i)=>i===qi?{...q,[field]:val}:q));
   const updateOpt = (qi,oi,val) => setQuestions(qs=>qs.map((q,i)=>i===qi?{...q,options:q.options.map((o,j)=>j===oi?val:o)}:q));
-  const addQ = () => setQuestions(qs=>[...qs,{text:'',options:['','','',''],correctAnswer:''}]);
+  const addQ = () => setQuestions(qs=>[...qs,{text:'',options:['','','',''],correctAnswer:'', marks: 1}]);
   const removeQ = (qi) => setQuestions(qs=>qs.filter((_,i)=>i!==qi));
 
   const handlePublish = async (status) => {
     if (!form.title.trim()) { showToast('Enter exam title.','error'); return; }
     setSaving(true);
     try {
-      await addDoc(collection(db,'exams'), { ...form, schoolId, questions, status, createdAt:serverTimestamp() });
+      await addDoc(collection(db,'exams'), { 
+        ...form, 
+        schoolId, 
+        questions, 
+        totalMarks: questions.reduce((sum, q) => sum + (Number(q.marks) || 1), 0),
+        status, 
+        createdAt:serverTimestamp() 
+      });
       showToast(status==='Active'?'Exam published!':'Draft saved.','success');
       setForm({title:'',subject:'',duration:60,instructions:'',passingMarks:40});
-      setQuestions([{text:'',options:['','','',''],correctAnswer:''}]);
+      setQuestions([{text:'',options:['','','',''],correctAnswer:'', marks: 1}]);
     } catch(e){ showToast('Error: '+e.message,'error'); }
     setSaving(false);
   };
@@ -382,7 +390,12 @@ function CreateExamTab({ schoolId, schoolSubjects, showToast }) {
       <p style={{fontSize:'0.85rem',marginBottom:'1.25rem'}}>Build exam questions manually or use AI to generate them instantly.</p>
 
       <div className="card" style={{padding:'1.5rem',marginBottom:'1.25rem'}}>
-        <h3 style={{fontSize:'0.9rem',marginBottom:'1rem',color:'var(--accent-blue)'}}>📋 Exam Details</h3>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1rem' }}>
+          <h3 style={{fontSize:'0.9rem',color:'var(--accent-blue)'}}>📋 Exam Details</h3>
+          <div style={{ background:'var(--accent-blue-light)', color:'var(--accent-blue)', padding:'4px 12px', borderRadius:20, fontSize:'0.85rem', fontWeight:700 }}>
+            Total Marks: {questions.reduce((sum, q) => sum + (Number(q.marks) || 1), 0)}
+          </div>
+        </div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'1rem',marginBottom:'1rem'}}>
           <div><label className="input-label">Exam Title *</label><input required className="input-field" value={form.title} onChange={e=>setForm({...form,title:e.target.value})} placeholder="Final Science Exam"/></div>
           <div><label className="input-label">Subject</label>
@@ -413,7 +426,11 @@ function CreateExamTab({ schoolId, schoolSubjects, showToast }) {
           <div key={qi} className="card" style={{padding:'1.25rem',marginBottom:'1rem',borderLeft:'3px solid var(--accent-blue)'}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.75rem'}}>
               <span style={{fontSize:'0.85rem',fontWeight:700,color:'var(--accent-blue)'}}>Q{qi+1}</span>
-              {questions.length>1&&<button className="btn btn-ghost btn-icon btn-sm" style={{color:'var(--accent-rose)'}} onClick={()=>removeQ(qi)}><Trash2 size={14}/></button>}
+              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                <label style={{ fontSize:'0.75rem', fontWeight:600, color:'var(--text-secondary)' }}>Marks</label>
+                <input type="number" min="1" className="input-field" style={{ width:60, padding:'4px 8px' }} value={q.marks || 1} onChange={e=>updateQ(qi,'marks',Number(e.target.value))} />
+                {questions.length>1&&<button className="btn btn-ghost btn-icon btn-sm" style={{color:'var(--accent-rose)'}} onClick={()=>removeQ(qi)}><Trash2 size={14}/></button>}
+              </div>
             </div>
             <div style={{marginBottom:'0.75rem'}}><label className="input-label">Question Text *</label><textarea className="input-field" rows={2} value={q.text} onChange={e=>updateQ(qi,'text',e.target.value)} placeholder="Type question here…"/></div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.75rem',marginBottom:'0.75rem'}}>

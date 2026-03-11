@@ -126,11 +126,27 @@ export default function ExamRoom() {
     try {
       const questions = exam.questions || [];
       let correct = 0;
+      let score = 0;
+      let totalMarks = 0;
+      
       const answerSheet = questions.map((q, i) => {
         const given = answers[i] || null;
         const isCorrect = given && given === q.correctAnswer;
-        if (isCorrect) correct++;
-        return { questionText: q.text, selectedOption: given, correctAnswer: q.correctAnswer||null, isCorrect };
+        const qMarks = Number(q.marks) || 1;
+        
+        totalMarks += qMarks;
+        if (isCorrect) {
+          correct++;
+          score += qMarks;
+        }
+        
+        return { 
+          questionText: q.text, 
+          selectedOption: given, 
+          correctAnswer: q.correctAnswer||null, 
+          isCorrect,
+          marks: qMarks
+        };
       });
 
       await addDoc(collection(db,'results'), {
@@ -146,9 +162,9 @@ export default function ExamRoom() {
         attempted:   Object.keys(answers).length,
         correct,
         incorrect:   Object.keys(answers).length - correct,
-        score:       correct,
-        totalMarks:  questions.length,
-        percentage:  questions.length > 0 ? Math.round((correct/questions.length)*100) : 0,
+        score,
+        totalMarks,
+        percentage:  totalMarks > 0 ? Math.round((score/totalMarks)*100) : 0,
         answerSheet,
         submittedAt: serverTimestamp(),
       });
@@ -246,8 +262,13 @@ export default function ExamRoom() {
               <p style={{ color:'#94a3b8' }}>No questions in this exam yet.</p>
             ) : (
               <>
-                <div style={{ fontSize:'1rem', fontWeight:700, marginBottom:20, color:'#0f172a', lineHeight:1.6 }}>
-                  <span style={{ color:'#2563eb' }}>Q{currentIdx+1}.</span> {currentQ.text}
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:20 }}>
+                  <div style={{ fontSize:'1rem', fontWeight:700, color:'#0f172a', lineHeight:1.6, flex:1 }}>
+                    <span style={{ color:'#2563eb' }}>Q{currentIdx+1}.</span> {currentQ.text}
+                  </div>
+                  <div style={{ background:'#eff6ff', color:'#2563eb', padding:'4px 10px', borderRadius:20, fontSize:'0.8rem', fontWeight:700, whiteSpace:'nowrap', marginLeft:12 }}>
+                    {currentQ.marks || 1} Mark{Number(currentQ.marks||1) !== 1 ? 's' : ''}
+                  </div>
                 </div>
                 <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
                   {(currentQ.options||[]).map((opt, oi) => {
