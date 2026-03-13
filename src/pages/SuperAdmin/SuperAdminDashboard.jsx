@@ -4,11 +4,11 @@ import {
   Building2, Users, BookOpen, Activity, BarChart3, PlusCircle, LogOut,
   Shield, Search, Pencil, Trash2, UserPlus, AlertTriangle, CheckCircle2,
   X, Layers, TrendingUp, Zap, Database, GraduationCap, ChevronDown,
-  BookMarked, School
+  BookMarked, School, CreditCard, LifeBuoy, Settings, MessageSquare, MonitorPlay, FileText
 } from 'lucide-react';
 import {
   collection, addDoc, getDocs, deleteDoc, doc, updateDoc,
-  query, orderBy, where, serverTimestamp, setDoc
+  query, orderBy, where, serverTimestamp, setDoc, getDoc
 } from 'firebase/firestore';
 import { createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { db, auth } from '../../firebase/config';
@@ -681,13 +681,321 @@ function AnalyticsTab({ schools, teacherCount, studentCount }) {
   );
 }
 
+/* ─────────────── BILLING TAB ─────────────── */
+function BillingTab({ schools, setSchools, showToast }) {
+  const [editingSchool, setEditingSchool] = useState(null);
+  const [planForm, setPlanForm] = useState({ plan: 'basic', limit: 500 });
+  const [saving, setSaving] = useState(false);
+
+  const plansList = [
+    { id: 'basic', name: 'Basic Plan', limit: 500, price: '₹2,000/mo' },
+    { id: 'pro', name: 'Pro Plan', limit: 2000, price: '₹5,000/mo' },
+    { id: 'enterprise', name: 'Enterprise', limit: 'Unlimited', price: 'Custom' }
+  ];
+
+  const handleEditPlan = (school) => {
+    setEditingSchool(school);
+    setPlanForm({
+      plan: school.subscriptionPlan || 'basic',
+      limit: school.studentLimit || 500
+    });
+  };
+
+  const handlePlanChange = (e) => {
+    const pId = e.target.value;
+    const pObj = plansList.find(p => p.id === pId);
+    setPlanForm({ plan: pId, limit: pObj ? pObj.limit : 500 });
+  };
+
+  const savePlan = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await updateDoc(doc(db, 'schools', editingSchool.id), {
+        subscriptionPlan: planForm.plan,
+        studentLimit: planForm.limit
+      });
+      setSchools(prev => prev.map(s => s.id === editingSchool.id ? { ...s, subscriptionPlan: planForm.plan, studentLimit: planForm.limit } : s));
+      showToast('Quota updated successfully', 'success');
+      setEditingSchool(null);
+    } catch (err) {
+      showToast('Failed to update quota', 'error');
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="animate-fade-in">
+      <div className="page-header-band" style={{ marginBottom:'1.75rem', background: 'var(--grad-purple)', padding: '1.5rem', borderRadius: 'var(--radius-lg)' }}>
+        <div style={{ position:'relative', zIndex:1 }}>
+          <div style={{ fontSize:'0.78rem', fontWeight:700, letterSpacing:'.1em', opacity:.7, marginBottom:6, color: '#fff' }}>SUBSCRIPTIONS</div>
+          <h2 style={{ color:'#fff', fontSize:'1.6rem', marginBottom:8 }}>Billing & Quota Management</h2>
+          <p style={{ color:'rgba(255,255,255,0.7)', fontSize:'0.875rem' }}>Monitor school usage and adjust subscription limits.</p>
+        </div>
+      </div>
+
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(280px, 1fr))', gap:'1.25rem', marginBottom: '2rem' }}>
+        {plansList.map(plan => (
+           <div key={plan.id} className="card" style={{ padding: '1.5rem', borderTop: `4px solid var(--accent-purple)` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 700 }}>{plan.name}</h3>
+                <span className="badge purple">{plan.price}</span>
+              </div>
+              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+                 <Users size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: 'middle' }}/>
+                 Student Limit: <strong>{plan.limit}</strong>
+              </div>
+           </div>
+        ))}
+      </div>
+
+      <div className="card" style={{ overflow:'hidden' }}>
+        <div style={{ padding:'1.1rem 1.5rem', borderBottom:'1px solid var(--border-light)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          <h3 style={{ fontSize:'0.95rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <CreditCard size={18} color="var(--accent-purple)"/> School Quota Usage
+          </h3>
+        </div>
+        <table className="data-table">
+          <thead><tr><th>School</th><th>Current Plan</th><th>Students Used</th><th>Actions</th></tr></thead>
+          <tbody>
+            {schools.length === 0 && <tr><td colSpan={4}><div className="empty-state"><Building2 size={36}/><p>No schools registered yet.</p></div></td></tr>}
+            {schools.map(s => {
+              const currentPlanId = s.subscriptionPlan || 'basic';
+              const currentLimit = s.studentLimit || 500;
+              const planObj = plansList.find(p => p.id === currentPlanId) || plansList[0];
+              
+              let usagePercent = 0;
+              if (currentLimit !== 'Unlimited') {
+                  usagePercent = Math.min(100, Math.round(((s.students || 0) / currentLimit) * 100));
+              }
+
+              return (
+              <tr key={s.id}>
+                <td><span style={{ fontWeight:600 }}>{s.name}</span></td>
+                <td><span className="badge" style={{ background: 'var(--bg-secondary)' }}>{planObj.name}</span></td>
+                <td>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: '0.85rem' }}>{s.students || 0} / {currentLimit}</span>
+                    <div style={{ flex: 1, height: 4, background: 'var(--border-light)', borderRadius: 2, minWidth: 60 }}>
+                       <div style={{ height: '100%', width: currentLimit === 'Unlimited' ? '100%' : `${usagePercent}%`, background: usagePercent > 80 ? 'var(--accent-rose)' : 'var(--accent-purple)', borderRadius: 2 }}/>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <button className="btn btn-ghost btn-sm" onClick={() => handleEditPlan(s)}>Edit Quota</button>
+                </td>
+              </tr>
+            )})}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Edit Quota Modal */}
+      {editingSchool && (
+        <div className="modal-overlay">
+          <div className="modal-box" style={{ maxWidth:400 }}>
+             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'1.25rem' }}>
+              <div><h3 style={{ fontSize:'1.15rem' }}>Update Quota</h3><p style={{ fontSize:'0.85rem' }}>{editingSchool.name}</p></div>
+              <button className="btn btn-ghost btn-icon" onClick={() => setEditingSchool(null)}><X size={18}/></button>
+            </div>
+            <form onSubmit={savePlan} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+               <div>
+                  <label className="input-label">Select Plan</label>
+                  <select className="input-field" value={planForm.plan} onChange={handlePlanChange}>
+                    {plansList.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+               </div>
+               <div>
+                 <label className="input-label">Student Limit override</label>
+                 <input 
+                   type="text" 
+                   className="input-field" 
+                   value={planForm.limit} 
+                   onChange={e => setPlanForm({...planForm, limit: e.target.value})}
+                 />
+                 <small style={{ color: 'var(--text-muted)' }}>You can set this to a custom number or "Unlimited"</small>
+               </div>
+               <div style={{ display:'flex', gap:10, justifyContent:'flex-end', marginTop:'0.5rem' }}>
+                <button type="button" className="btn btn-ghost" onClick={() => setEditingSchool(null)}>Cancel</button>
+                <button type="submit" className="btn btn-purple" disabled={saving}>{saving ? 'Saving...' : 'Save Changes'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ─────────────── SUPPORT TAB ─────────────── */
+function SupportTab({ showToast }) {
+  const [tickets, setTickets] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const snap = await getDocs(query(collection(db, 'supportTickets'), orderBy('createdAt', 'desc')));
+        setTickets(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      } catch (err) {
+        console.error(err);
+      }
+      setLoading(false);
+    })();
+  }, []);
+
+  const updateStatus = async (ticketId, newStatus) => {
+    try {
+      await updateDoc(doc(db, 'supportTickets', ticketId), { status: newStatus });
+      setTickets(prev => prev.map(t => t.id === ticketId ? { ...t, status: newStatus } : t));
+      showToast('Ticket status updated.', 'success');
+    } catch (err) {
+      showToast('Failed to update ticket.', 'error');
+    }
+  };
+
+  return (
+    <div className="animate-fade-in">
+       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1.25rem' }}>
+        <div>
+          <h2 style={{ fontSize:'1.3rem', marginBottom:4 }}>Support Helpdesk</h2>
+          <p style={{ fontSize:'0.85rem' }}>Manage queries and issues reported by schools.</p>
+        </div>
+      </div>
+
+      <div className="card" style={{ overflow:'hidden' }}>
+        {loading ? <div style={{ padding: '2rem', textAlign: 'center' }}>Loading tickets...</div> : (
+          <table className="data-table">
+            <thead><tr><th>Ticket ID</th><th>School</th><th>Subject</th><th>Status</th><th>Priority</th><th>Actions</th></tr></thead>
+            <tbody>
+              {tickets.length === 0 && <tr><td colSpan={6}><div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>No support tickets found.</div></td></tr>}
+              {tickets.map(t => (
+                <tr key={t.id}>
+                  <td style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--accent-blue)' }}>{t.id.slice(0, 8)}</td>
+                  <td style={{ color: 'var(--text-secondary)' }}>{t.schoolName || 'Unknown'}</td>
+                  <td style={{ fontWeight: 500 }}>{t.subject}</td>
+                  <td>
+                    <select 
+                      value={t.status} 
+                      onChange={(e) => updateStatus(t.id, e.target.value)}
+                      className={`badge ${t.status === 'Open' ? 'rose' : t.status === 'In Progress' ? 'info' : 'success'}`}
+                      style={{ border: 'none', cursor: 'pointer', outline: 'none' }}
+                    >
+                      <option value="Open">Open</option>
+                      <option value="In Progress">In Progress</option>
+                      <option value="Resolved">Resolved</option>
+                    </select>
+                  </td>
+                  <td><span className={`badge ${t.priority === 'High' ? 'danger' : t.priority === 'Medium' ? 'purple' : 'gray'}`}>{t.priority}</span></td>
+                  <td><button className="btn btn-ghost btn-sm">View Details</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ─────────────── SETTINGS TAB ─────────────── */
+function SettingsTab({ showToast }) {
+  const [maintenance, setMaintenance] = useState(false);
+  const [announcement, setAnnouncement] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const docSnap = await getDoc(doc(db, 'globalSettings', 'master'));
+        if (docSnap.exists()) {
+          setMaintenance(docSnap.data().maintenance || false);
+          setAnnouncement(docSnap.data().announcement || '');
+        }
+      } catch (err) {
+        console.error(err);
+      }
+      setLoading(false);
+    })();
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await setDoc(doc(db, 'globalSettings', 'master'), {
+        maintenance,
+        announcement,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      showToast('Global settings updated successfully!', 'success');
+    } catch (err) {
+      showToast('Failed to save settings.', 'error');
+    }
+    setSaving(false);
+  }
+
+  if (loading) return <div style={{ padding: '2rem' }}>Loading settings...</div>;
+
+  return (
+    <div className="animate-fade-in" style={{ maxWidth: 800 }}>
+       <div style={{ marginBottom:'1.5rem' }}>
+          <h2 style={{ fontSize:'1.3rem', marginBottom:4 }}>Global Settings</h2>
+          <p style={{ fontSize:'0.85rem' }}>Control system-wide configurations and announcements.</p>
+       </div>
+
+       <div className="card" style={{ padding: '1.5rem', marginBottom: '1.5rem' }}>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: '1.5rem' }}>
+            <div className="icon-box blue"><MessageSquare size={20}/></div>
+            <div style={{ flex: 1 }}>
+              <h3 style={{ fontSize: '1.05rem', marginBottom: 4 }}>Global Announcement</h3>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+                Broadcast a message to all users (Admins, Teachers, Students) across all schools.
+              </p>
+              <textarea 
+                className="input-field" 
+                rows={3} 
+                placeholder="E.g., System maintenance scheduled for Sunday at 2 AM IST."
+                value={announcement}
+                onChange={e => setAnnouncement(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="divider" />
+          
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <div className={`icon-box ${maintenance ? 'rose' : 'gray'}`}><MonitorPlay size={20}/></div>
+            <div style={{ flex: 1 }}>
+              <h3 style={{ fontSize: '1.05rem', marginBottom: 2 }}>Maintenance Mode</h3>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                When active, all logins (except Super Admin) will be temporarily disabled.
+              </p>
+            </div>
+            <label style={{ position: 'relative', display: 'inline-block', width: 44, height: 24 }}>
+              <input type="checkbox" style={{ opacity: 0, width: 0, height: 0 }} checked={maintenance} onChange={e => setMaintenance(e.target.checked)} />
+              <span style={{ position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: maintenance ? 'var(--accent-rose)' : '#ccc', transition: '.4s', borderRadius: 34 }}></span>
+              <span style={{ position: 'absolute', content: '""', height: 18, width: 18, left: maintenance ? 22 : 3, bottom: 3, backgroundColor: 'white', transition: '.4s', borderRadius: '50%' }}></span>
+            </label>
+          </div>
+       </div>
+
+       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : 'Save Settings'}</button>
+       </div>
+    </div>
+  )
+}
+
 /* ─────────────── MAIN DASHBOARD ─────────────── */
 const TABS = [
   { id:'overview',   icon:BarChart3,    label:'Overview',  section:'MAIN' },
+  { id:'analytics',  icon:Activity,     label:'Analytics', section:'MAIN' },
   { id:'schools',    icon:Building2,    label:'Schools',   section:'MANAGE' },
   { id:'teachers',   icon:GraduationCap,label:'Teachers',  section:'MANAGE' },
   { id:'students',   icon:Users,        label:'Students',  section:'MANAGE' },
-  { id:'analytics',  icon:Activity,     label:'Analytics', section:'REPORTS' },
+  { id:'billing',    icon:CreditCard,   label:'Billing',   section:'OPERATIONS' },
+  { id:'support',    icon:LifeBuoy,     label:'Support',   section:'OPERATIONS' },
+  { id:'settings',   icon:Settings,     label:'Settings',  section:'SYSTEM' },
 ];
 
 export default function SuperAdminDashboard() {
@@ -725,7 +1033,7 @@ export default function SuperAdminDashboard() {
     })();
   }, []);
 
-  const sections = ['MAIN','MANAGE','REPORTS'];
+  const sections = ['MAIN','MANAGE','OPERATIONS','SYSTEM'];
 
   return (
     <>
@@ -787,10 +1095,13 @@ export default function SuperAdminDashboard() {
 
           <div className="page-content">
             {activeTab==='overview'  && <OverviewTab schools={schools} teacherCount={teacherCount} studentCount={studentCount}/>}
+            {activeTab==='analytics' && <AnalyticsTab schools={schools} teacherCount={teacherCount} studentCount={studentCount}/>}
             {activeTab==='schools'   && <SchoolsTab schools={schools} setSchools={setSchools} showToast={showToast}/>}
             {activeTab==='teachers'  && <TeachersTab schools={schools} showToast={showToast}/>}
             {activeTab==='students'  && <StudentsTab schools={schools} showToast={showToast}/>}
-            {activeTab==='analytics' && <AnalyticsTab schools={schools} teacherCount={teacherCount} studentCount={studentCount}/>}
+            {activeTab==='billing'   && <BillingTab schools={schools} setSchools={setSchools} showToast={showToast} />}
+            {activeTab==='support'   && <SupportTab showToast={showToast} />}
+            {activeTab==='settings'  && <SettingsTab showToast={showToast} />}
           </div>
         </main>
       </div>
