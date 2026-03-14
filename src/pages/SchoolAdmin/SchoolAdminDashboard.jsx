@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Users, GraduationCap, BookOpen, BarChart3, LogOut,
+  Users, GraduationCap, BookOpen, BarChart3, LogOut, Menu,
   PlusCircle, Search, Trash2, X, AlertTriangle, CheckCircle2,
-  Building2, UserPlus, FileText, Clock, Sparkles, Plus, FilePlus, Download, BarChart2
+  Building2, UserPlus, FileText, Clock, Sparkles, Plus, FilePlus, Download, BarChart2,
+  Image, Save, Phone, MapPin, Award, User
 } from 'lucide-react';
 import {
   collection, getDocs, addDoc, deleteDoc, doc,
@@ -14,6 +15,7 @@ import { db, auth } from '../../firebase/config';
 import { useAuth } from '../../contexts/AuthContext';
 import { signOut } from 'firebase/auth';
 import AIQuestionGenerator from '../../components/AIQuestionGenerator';
+import PDFQuestionExtractor from '../../components/PDFQuestionExtractor';
 import { downloadDetailedResult, downloadClassMarksheet, downloadSubjectReport } from '../../services/pdfService';
 
 /* ──────────────── SHARED HELPERS ──────────────── */
@@ -354,11 +356,17 @@ function CreateExamTab({ schoolId, schoolSubjects, showToast }) {
   const [questions, setQuestions] = useState([{ text:'', options:['','','',''], correctAnswer:'', marks: 1 }]);
   const [saving, setSaving] = useState(false);
   const [showAI, setShowAI] = useState(false);
+  const [showPDF, setShowPDF] = useState(false);
 
   const handleAIInsert = (aiQs) => {
     const mappedAiQs = aiQs.map(q => ({ ...q, marks: 1 }));
     setQuestions(prev => { const c = prev.filter(q=>q.text.trim()); return [...c, ...mappedAiQs]; });
     setShowAI(false);
+  };
+  const handlePDFInsert = (pdfQs) => {
+    const mapped = pdfQs.map(q => ({ ...q, marks: 1 }));
+    setQuestions(prev => { const c = prev.filter(q=>q.text.trim()); return [...c, ...mapped]; });
+    setShowPDF(false);
   };
   const updateQ = (qi,field,val) => setQuestions(qs=>qs.map((q,i)=>i===qi?{...q,[field]:val}:q));
   const updateOpt = (qi,oi,val) => setQuestions(qs=>qs.map((q,i)=>i===qi?{...q,options:q.options.map((o,j)=>j===oi?val:o)}:q));
@@ -416,11 +424,14 @@ function CreateExamTab({ schoolId, schoolSubjects, showToast }) {
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1rem'}}>
           <h3 style={{fontSize:'0.95rem'}}>Questions ({questions.length})</h3>
           <div style={{display:'flex',gap:8}}>
-            <button className="btn btn-ghost btn-sm" onClick={()=>setShowAI(true)} style={{color:'var(--accent-purple)',borderColor:'var(--accent-purple)',background:'var(--accent-purple-light)',gap:5}}>
-              <Sparkles size={15}/> AI Generate
-            </button>
-            <button className="btn btn-ghost btn-sm" onClick={addQ}><Plus size={15}/> Add</button>
-          </div>
+              <button className="btn btn-ghost btn-sm" onClick={()=>setShowPDF(true)} style={{color:'var(--accent-blue)',borderColor:'var(--accent-blue)',background:'var(--accent-blue-light)',gap:5}}>
+                <FileText size={15}/> Upload PDF
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={()=>setShowAI(true)} style={{color:'var(--accent-purple)',borderColor:'var(--accent-purple)',background:'var(--accent-purple-light)',gap:5}}>
+                <Sparkles size={15}/> AI Generate
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={addQ}><Plus size={15}/> Add</button>
+            </div>
         </div>
         {questions.map((q,qi)=>(
           <div key={qi} className="card" style={{padding:'1.25rem',marginBottom:'1rem',borderLeft:'3px solid var(--accent-blue)'}}>
@@ -451,13 +462,172 @@ function CreateExamTab({ schoolId, schoolSubjects, showToast }) {
         <button className="btn btn-primary" onClick={()=>handlePublish('Active')} disabled={saving}>{saving?'Publishing…':'🚀 Publish'}</button>
       </div>
 
-      {showAI && <AIQuestionGenerator defaultSubject={form.subject} onInsert={handleAIInsert} onClose={()=>setShowAI(false)}/>}
+      {showAI  && <AIQuestionGenerator defaultSubject={form.subject} onInsert={handleAIInsert} onClose={()=>setShowAI(false)}/>}
+      {showPDF && <PDFQuestionExtractor onInsert={handlePDFInsert} onClose={()=>setShowPDF(false)}/>}
+    </div>
+  );
+}
+
+/* ──────────────── SCHOOL PROFILE TAB ──────────────── */
+function SchoolProfileTab({ school, showToast }) {
+  const fileRef = useRef();
+  const [profile, setProfile] = useState({
+    address: '', phone: '', board: '', schoolCode: '', principal: '', tagline: '', logoBase64: ''
+  });
+  const [preview, setPreview] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!school) return;
+    setProfile({
+      address:    school.address    || '',
+      phone:      school.phone      || '',
+      board:      school.board      || '',
+      schoolCode: school.schoolCode || '',
+      principal:  school.principal  || '',
+      tagline:    school.tagline    || '',
+      logoBase64: school.logoBase64 || '',
+    });
+    if (school.logoBase64) setPreview(school.logoBase64);
+  }, [school]);
+
+  const handleLogoChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 500 * 1024) { showToast('Logo must be under 500KB.', 'error'); return; }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const base64 = ev.target.result;
+      setPreview(base64);
+      setProfile(p => ({ ...p, logoBase64: base64 }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSave = async () => {
+    if (!school?.id) { showToast('School not loaded yet.', 'error'); return; }
+    setSaving(true);
+    try {
+      await updateDoc(doc(db, 'schools', school.id), {
+        address:    profile.address,
+        phone:      profile.phone,
+        board:      profile.board,
+        schoolCode: profile.schoolCode,
+        principal:  profile.principal,
+        tagline:    profile.tagline,
+        logoBase64: profile.logoBase64,
+      });
+      showToast('School profile saved! PDFs will now use this letterhead.', 'success');
+    } catch (err) {
+      showToast('Error saving profile: ' + err.message, 'error');
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="animate-fade-in" style={{ maxWidth: 720 }}>
+      <div style={{ marginBottom: '1.5rem' }}>
+        <h2 style={{ fontSize: '1.2rem', marginBottom: 4 }}>School Profile</h2>
+        <p style={{ fontSize: '0.85rem' }}>This information will appear on all PDF report cards and marksheets as a professional letterhead.</p>
+      </div>
+
+      {/* Logo Upload */}
+      <div className="card" style={{ padding: '1.5rem', marginBottom: '1.25rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '1.25rem' }}>
+          <div className="icon-box blue sm"><Image size={16}/></div>
+          <h3 style={{ fontSize: '0.95rem' }}>School Logo</h3>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap' }}>
+          {/* Preview */}
+          <div style={{
+            width: 100, height: 100, borderRadius: 'var(--radius-md)', border: '2px dashed var(--border-medium)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+            background: 'var(--bg-tertiary)', flexShrink: 0
+          }}>
+            {preview
+              ? <img src={preview} alt="logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }}/>
+              : <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}><Image size={28}/><div style={{ fontSize: '0.7rem', marginTop: 4 }}>No Logo</div></div>}
+          </div>
+          <div>
+            <button className="btn btn-ghost btn-sm" style={{ marginBottom: 8 }} onClick={() => fileRef.current?.click()}>
+              <Image size={15}/> {preview ? 'Change Logo' : 'Upload Logo'}
+            </button>
+            {preview && (
+              <button className="btn btn-ghost btn-sm" style={{ color: 'var(--accent-rose)', display: 'block' }}
+                onClick={() => { setPreview(''); setProfile(p => ({ ...p, logoBase64: '' })); }}>
+                ✕ Remove Logo
+              </button>
+            )}
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 6 }}>PNG or JPG, max 500KB. Will appear in all PDF letterheads.</p>
+            <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleLogoChange}/>
+          </div>
+        </div>
+      </div>
+
+      {/* Profile Fields */}
+      <div className="card" style={{ padding: '1.5rem', marginBottom: '1.25rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '1.25rem' }}>
+          <div className="icon-box blue sm"><Building2 size={16}/></div>
+          <h3 style={{ fontSize: '0.95rem' }}>School Details for Letterhead</h3>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div>
+            <label className="input-label">School Tagline</label>
+            <input className="input-field" value={profile.tagline} onChange={e => setProfile({ ...profile, tagline: e.target.value })} placeholder="e.g. Excellence in Education Since 1990"/>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div>
+              <label className="input-label"><Award size={13} style={{ display:'inline', marginRight:4, verticalAlign:'middle' }}/>Affiliation Board</label>
+              <input className="input-field" value={profile.board} onChange={e => setProfile({ ...profile, board: e.target.value })} placeholder="e.g. CBSE / ICSE / State Board"/>
+            </div>
+            <div>
+              <label className="input-label">School Code</label>
+              <input className="input-field" value={profile.schoolCode} onChange={e => setProfile({ ...profile, schoolCode: e.target.value })} placeholder="e.g. 45012"/>
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div>
+              <label className="input-label"><MapPin size={13} style={{ display:'inline', marginRight:4, verticalAlign:'middle' }}/>Full Address</label>
+              <input className="input-field" value={profile.address} onChange={e => setProfile({ ...profile, address: e.target.value })} placeholder="Street, City, State — PIN"/>
+            </div>
+            <div>
+              <label className="input-label"><Phone size={13} style={{ display:'inline', marginRight:4, verticalAlign:'middle' }}/>Phone / Contact</label>
+              <input className="input-field" value={profile.phone} onChange={e => setProfile({ ...profile, phone: e.target.value })} placeholder="+91 XXXXX XXXXX"/>
+            </div>
+          </div>
+          <div>
+            <label className="input-label"><User size={13} style={{ display:'inline', marginRight:4, verticalAlign:'middle' }}/>Principal Name</label>
+            <input className="input-field" value={profile.principal} onChange={e => setProfile({ ...profile, principal: e.target.value })} placeholder="e.g. Dr. Rajesh Kumar"/>
+          </div>
+        </div>
+      </div>
+
+      {/* Preview Banner */}
+      {(preview || profile.address || profile.board) && (
+        <div className="card" style={{ padding: '1rem 1.5rem', marginBottom: '1.25rem', background: 'var(--accent-blue-light)', border: '1px solid var(--accent-blue)20' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {preview && <img src={preview} alt="logo" style={{ width: 44, height: 44, objectFit: 'contain', borderRadius: 6, border: '1px solid var(--border-light)' }}/>}
+            <div>
+              <div style={{ fontWeight: 700, color: 'var(--accent-blue)', fontSize: '0.95rem' }}>{school?.name?.toUpperCase()}</div>
+              {profile.board && <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{profile.board}{profile.schoolCode ? ` | Code: ${profile.schoolCode}` : ''}</div>}
+              {profile.address && <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>📍 {profile.address}</div>}
+            </div>
+          </div>
+          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 8 }}>↑ This is how your letterhead will look in PDFs</div>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+          <Save size={16}/> {saving ? 'Saving…' : 'Save Profile'}
+        </button>
+      </div>
     </div>
   );
 }
 
 /* ──────────────── MARKSHEET / RESULTS TAB ──────────────── */
-function MarksheetTab({ schoolId, schoolName }) {
+function MarksheetTab({ schoolId, schoolName, schoolProfile }) {
   const [results,      setResults]      = useState([]);
   const [exams,        setExams]        = useState([]);
   const [loading,      setLoading]      = useState(true);
@@ -489,23 +659,25 @@ function MarksheetTab({ schoolId, schoolName }) {
 
   const avg    = filtered.length ? Math.round(filtered.reduce((s,r)=>s+(r.percentage||0),0)/filtered.length) : 0;
   const passed = filtered.filter(r=>(r.percentage||0)>=40).length;
+  const getGradeColor = (pct) => pct>=90?'var(--accent-emerald)':pct>=70?'var(--accent-blue)':pct>=40?'var(--accent-amber)':'var(--accent-rose)';
+  const getGrade = (pct) => pct>=90?'A+':pct>=80?'A':pct>=70?'B+':pct>=60?'B':pct>=50?'C':pct>=40?'D':'F';
 
   return (
     <div className="animate-fade-in">
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'1.25rem', flexWrap:'wrap', gap:'1rem' }}>
         <div>
-          <h2 style={{ fontSize:'1.2rem', marginBottom:4 }}>Results & Marksheets</h2>
-          <p style={{ fontSize:'0.85rem' }}>Download individual result PDFs or bulk class/subject marksheets.</p>
+          <h2 style={{ fontSize:'1.2rem', marginBottom:4 }}>Results &amp; Marksheets</h2>
+          <p style={{ fontSize:'0.85rem' }}>Download professional PDFs with school letterhead. Filter by class, subject, or exam.</p>
         </div>
         <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
           <button className="btn btn-ghost btn-sm"
-            onClick={() => downloadClassMarksheet(filtered, filterClass, filterSubject, schoolName)}
+            onClick={() => downloadClassMarksheet(filtered, filterClass, filterSubject, schoolName, schoolProfile)}
             disabled={filtered.length===0}
             style={{ color:'var(--accent-purple)', borderColor:'var(--accent-purple)', background:'var(--accent-purple-light)', gap:5 }}>
             <Download size={14}/> Class Marksheet PDF
           </button>
           <button className="btn btn-ghost btn-sm"
-            onClick={() => downloadSubjectReport(filtered, schoolName)}
+            onClick={() => downloadSubjectReport(filtered, schoolName, schoolProfile)}
             disabled={filtered.length===0}
             style={{ color:'var(--accent-blue)', borderColor:'var(--accent-blue)', background:'var(--accent-blue-light)', gap:5 }}>
             <BarChart2 size={14}/> Subject Report PDF
@@ -531,7 +703,7 @@ function MarksheetTab({ schoolId, schoolName }) {
 
       {/* Stats */}
       {filtered.length > 0 && (
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))', gap:'1rem', marginBottom:'1.25rem' }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(120px,1fr))', gap:'1rem', marginBottom:'1.25rem' }}>
           {[
             {label:'Submissions', value:filtered.length,                          color:'var(--accent-blue)'   },
             {label:'Avg Score',   value:`${avg}%`,                               color:'var(--accent-purple)' },
@@ -539,9 +711,9 @@ function MarksheetTab({ schoolId, schoolName }) {
             {label:'Failed',      value:filtered.length-passed,                  color:'var(--accent-rose)'   },
             {label:'Pass Rate',   value:`${filtered.length?Math.round(passed/filtered.length*100):0}%`, color:'var(--accent-amber)'},
           ].map(s=>(
-            <div key={s.label} className="card" style={{ padding:'1rem', textAlign:'center' }}>
-              <div style={{ fontSize:'1.6rem', fontWeight:800, fontFamily:'Space Grotesk', color:s.color, marginBottom:4 }}>{s.value}</div>
-              <div style={{ fontSize:'0.75rem', fontWeight:600 }}>{s.label}</div>
+            <div key={s.label} className="card" style={{ padding:'1rem 0.75rem', textAlign:'center', borderTop:`3px solid ${s.color}` }}>
+              <div style={{ fontSize:'1.5rem', fontWeight:800, fontFamily:'Space Grotesk', color:s.color, marginBottom:4 }}>{s.value}</div>
+              <div style={{ fontSize:'0.72rem', fontWeight:600, color:'var(--text-secondary)' }}>{s.label}</div>
             </div>
           ))}
         </div>
@@ -551,15 +723,24 @@ function MarksheetTab({ schoolId, schoolName }) {
       <div className="card" style={{ overflow:'hidden' }}>
         {loading ? <div style={{ padding:'2rem', textAlign:'center' }}>Loading…</div> : (
           <table className="data-table">
-            <thead><tr><th>Student</th><th>Class</th><th>Exam</th><th>Subject</th><th>Score</th><th>%</th><th>Grade</th><th>Result</th><th>Date</th><th>PDF</th></tr></thead>
+            <thead><tr><th>#</th><th>Student</th><th>Class</th><th>Exam</th><th>Subject</th><th>Score</th><th>%</th><th>Grade</th><th>Result</th><th>Date</th><th>PDF</th></tr></thead>
             <tbody>
-              {filtered.length===0 && <tr><td colSpan={10}><div className="empty-state"><BarChart2 size={36}/><p>No results match the current filter.</p></div></td></tr>}
-              {[...filtered].sort((a,b)=>(b.percentage||0)-(a.percentage||0)).map(r=>{
+              {filtered.length===0 && <tr><td colSpan={11}><div className="empty-state"><BarChart2 size={36}/><p>No results match the current filter.</p></div></td></tr>}
+              {[...filtered].sort((a,b)=>(b.percentage||0)-(a.percentage||0)).map((r, idx)=>{
                 const pass = (r.percentage||0)>=40;
                 const pct  = r.percentage||0;
-                const grade = pct>=90?'A+':pct>=80?'A':pct>=70?'B+':pct>=60?'B':pct>=50?'C':pct>=40?'D':'F';
+                const grade = getGrade(pct);
+                const gradeColor = getGradeColor(pct);
                 return (
-                  <tr key={r.id}>
+                  <tr key={r.id} style={{ background: idx===0 ? 'rgba(217,119,6,0.04)' : undefined }}>
+                    <td style={{ textAlign:'center' }}>
+                      <span style={{
+                        display:'inline-flex', alignItems:'center', justifyContent:'center',
+                        width:24, height:24, borderRadius:'50%', fontSize:'0.75rem', fontWeight:800,
+                        background: idx===0 ? 'linear-gradient(135deg,#f59e0b,#d97706)' : idx===1 ? '#94a3b8' : idx===2 ? '#cd7f32' : 'var(--bg-tertiary)',
+                        color: idx < 3 ? '#fff' : 'var(--text-secondary)'
+                      }}>{idx+1}</span>
+                    </td>
                     <td>
                       <div style={{ fontWeight:600 }}>{r.studentName||'—'}</div>
                       <div style={{ fontSize:'0.72rem', color:'var(--text-muted)' }}>{r.rollNo ? `Roll: ${r.rollNo}` : ''}</div>
@@ -569,15 +750,22 @@ function MarksheetTab({ schoolId, schoolName }) {
                     <td><span className="badge purple">{r.subject||'—'}</span></td>
                     <td style={{ fontWeight:700 }}>{r.score||0}/{r.totalMarks||0}</td>
                     <td>
-                      <span style={{ fontWeight:700, color:pass?'var(--accent-emerald)':'var(--accent-rose)' }}>{pct}%</span>
+                      <div>
+                        <span style={{ fontWeight:700, color:pass?'var(--accent-emerald)':'var(--accent-rose)', fontSize:'0.9rem' }}>{pct}%</span>
+                        <div style={{ marginTop:3, height:4, background:'var(--border-light)', borderRadius:4, overflow:'hidden', width:60 }}>
+                          <div style={{ height:'100%', width:`${pct}%`, background:pass?'var(--grad-emerald)':'var(--grad-rose)', borderRadius:4 }}/>
+                        </div>
+                      </div>
                     </td>
                     <td>
-                      <span style={{ fontWeight:800, fontSize:'0.95rem', color:['A+','A'].includes(grade)?'var(--accent-emerald)':grade==='F'?'var(--accent-rose)':'var(--accent-blue)' }}>{grade}</span>
+                      <span style={{ fontWeight:800, fontSize:'0.95rem', color:gradeColor, padding:'2px 8px', background:`${gradeColor}15`, borderRadius:6 }}>{grade}</span>
                     </td>
                     <td><span className={`badge ${pass?'success':'danger'}`}>{pass?'Pass':'Fail'}</span></td>
                     <td style={{ fontSize:'0.75rem', color:'var(--text-muted)' }}>{r.submittedAt?.toDate?r.submittedAt.toDate().toLocaleDateString('en-IN'):'—'}</td>
                     <td>
-                      <button className="btn btn-ghost btn-icon btn-sm" title="Detailed Result PDF" onClick={()=>downloadDetailedResult(r)} style={{ color:'var(--accent-blue)' }}>
+                      <button className="btn btn-ghost btn-icon btn-sm" title="Download Report Card PDF"
+                        onClick={()=>downloadDetailedResult(r, schoolName, schoolProfile)}
+                        style={{ color:'var(--accent-blue)' }}>
                         <FileText size={15}/>
                       </button>
                     </td>
@@ -594,11 +782,12 @@ function MarksheetTab({ schoolId, schoolName }) {
 
 /* ──────────────── MAIN COMPONENT ──────────────── */
 const TABS = [
-  { id:'overview',   label:'Overview',    icon:BarChart3     },
-  { id:'teachers',   label:'Teachers',    icon:GraduationCap },
-  { id:'students',   label:'Students',    icon:Users          },
-  { id:'create',     label:'Create Exam', icon:FilePlus       },
-  { id:'marksheet',  label:'Results',     icon:FileText       },
+  { id:'overview',   label:'Overview',       icon:BarChart3     },
+  { id:'teachers',   label:'Teachers',       icon:GraduationCap },
+  { id:'students',   label:'Students',       icon:Users          },
+  { id:'create',     label:'Create Exam',    icon:FilePlus       },
+  { id:'marksheet',  label:'Results',        icon:FileText       },
+  { id:'profile',    label:'School Profile', icon:Image         },
 ];
 
 export default function SchoolAdminDashboard() {
@@ -609,6 +798,7 @@ export default function SchoolAdminDashboard() {
   const [teacherCount, setTeacherCount] = useState(0);
   const [studentCount, setStudentCount] = useState(0);
   const [toast, setToast] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const showToast = (msg, type='success') => setToast({ msg, type });
 
@@ -616,6 +806,17 @@ export default function SchoolAdminDashboard() {
     await signOut(auth);
     navigate('/login');
   };
+
+  // schoolProfile derived from school doc
+  const schoolProfile = school ? {
+    logoBase64: school.logoBase64 || '',
+    address:    school.address    || '',
+    phone:      school.phone      || '',
+    board:      school.board      || '',
+    schoolCode: school.schoolCode || '',
+    principal:  school.principal  || '',
+    tagline:    school.tagline    || '',
+  } : {};
 
   // Load this school admin's school data
   useEffect(() => {
@@ -643,8 +844,10 @@ export default function SchoolAdminDashboard() {
   return (
     <>
       <div className="dashboard-layout">
+        {/* Mobile sidebar overlay */}
+        {sidebarOpen && <div className="sidebar-overlay open" onClick={()=>setSidebarOpen(false)}/>}
         {/* SIDEBAR */}
-        <aside className="sidebar">
+        <aside className={`sidebar${sidebarOpen?' open':''}`}>
           <div className="sidebar-logo">
             <div style={{ display:'flex', alignItems:'center', gap:10 }}>
               <div className="icon-box blue lg" style={{ flexShrink:0 }}><Building2 size={20}/></div>
@@ -658,7 +861,7 @@ export default function SchoolAdminDashboard() {
           <nav className="sidebar-nav">
             <div className="sidebar-section-title">PORTAL</div>
             {TABS.map(item => (
-              <button key={item.id} className={`nav-item ${activeTab===item.id?'active':''}`} onClick={()=>setActiveTab(item.id)}>
+              <button key={item.id} className={`nav-item ${activeTab===item.id?'active':''}`} onClick={()=>{setActiveTab(item.id); setSidebarOpen(false);}}>
                 <item.icon size={17}/> {item.label}
               </button>
             ))}
@@ -678,6 +881,9 @@ export default function SchoolAdminDashboard() {
         {/* MAIN */}
         <main className="main-content">
           <div className="main-header">
+            <button className="hamburger-btn" onClick={()=>setSidebarOpen(o=>!o)} aria-label="Toggle menu">
+              <Menu size={20}/>
+            </button>
             <div>
               <h2 style={{ fontSize:'1.1rem', marginBottom:2 }}>{TABS.find(t=>t.id===activeTab)?.label}</h2>
               <div style={{ fontSize:'0.78rem', color:'var(--text-muted)' }}>
@@ -698,7 +904,8 @@ export default function SchoolAdminDashboard() {
             {activeTab === 'teachers'   && <TeachersTab schoolId={school?.id} schoolSubjects={school?.subjects} showToast={showToast}/>}
             {activeTab === 'students'   && <StudentsTab schoolId={school?.id} schoolSubjects={school?.subjects} showToast={showToast}/>}
             {activeTab === 'create'     && <CreateExamTab schoolId={school?.id} schoolSubjects={school?.subjects} showToast={showToast}/>}
-            {activeTab === 'marksheet'  && <MarksheetTab schoolId={school?.id} schoolName={school?.name||''}/>}
+            {activeTab === 'marksheet'  && <MarksheetTab schoolId={school?.id} schoolName={school?.name||''} schoolProfile={schoolProfile}/>}
+            {activeTab === 'profile'    && <SchoolProfileTab school={school} showToast={showToast}/>}
           </div>
         </main>
       </div>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Building2, Users, BookOpen, Activity, BarChart3, PlusCircle, LogOut,
+  Building2, Users, BookOpen, Activity, BarChart3, PlusCircle, LogOut, Menu,
   Shield, Search, Pencil, Trash2, UserPlus, AlertTriangle, CheckCircle2,
   X, Layers, TrendingUp, Zap, Database, GraduationCap, ChevronDown,
   BookMarked, School, CreditCard, LifeBuoy, Settings, MessageSquare, MonitorPlay, FileText
@@ -682,16 +682,29 @@ function AnalyticsTab({ schools, teacherCount, studentCount }) {
 }
 
 /* ─────────────── BILLING TAB ─────────────── */
+const DEFAULT_PLANS = [
+  { id:'basic',      name:'Basic Plan',  limit:500,         price:'₹2,000/mo', description:'Best for small schools' },
+  { id:'pro',        name:'Pro Plan',    limit:2000,        price:'₹5,000/mo', description:'Growing institutions'   },
+  { id:'enterprise', name:'Enterprise',  limit:'Unlimited', price:'Custom',    description:'Large school chains'    },
+];
+
 function BillingTab({ schools, setSchools, showToast }) {
   const [editingSchool, setEditingSchool] = useState(null);
-  const [planForm, setPlanForm] = useState({ plan: 'basic', limit: 500 });
-  const [saving, setSaving] = useState(false);
+  const [planForm,      setPlanForm]      = useState({ plan:'basic', limit:500 });
+  const [plansList,     setPlansList]     = useState(DEFAULT_PLANS);
+  const [editingPlans,  setEditingPlans]  = useState(false);
+  const [draftPlans,    setDraftPlans]    = useState(DEFAULT_PLANS);
+  const [saving,        setSaving]        = useState(false);
+  const [savingPlans,   setSavingPlans]   = useState(false);
 
-  const plansList = [
-    { id: 'basic', name: 'Basic Plan', limit: 500, price: '₹2,000/mo' },
-    { id: 'pro', name: 'Pro Plan', limit: 2000, price: '₹5,000/mo' },
-    { id: 'enterprise', name: 'Enterprise', limit: 'Unlimited', price: 'Custom' }
-  ];
+  useEffect(() => {
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db,'globalSettings','pricingPlans'));
+        if (snap.exists() && snap.data().plans?.length) setPlansList(snap.data().plans);
+      } catch { /* use defaults */ }
+    })();
+  }, []);
 
   const handleEditPlan = (school) => {
     setEditingSchool(school);
@@ -724,6 +737,19 @@ function BillingTab({ schools, setSchools, showToast }) {
     setSaving(false);
   };
 
+  const openEditPlans = () => { setDraftPlans(plansList.map(p=>({...p}))); setEditingPlans(true); };
+
+  const savePlans = async () => {
+    setSavingPlans(true);
+    try {
+      await setDoc(doc(db,'globalSettings','pricingPlans'), { plans: draftPlans }, { merge: true });
+      setPlansList(draftPlans);
+      showToast('Pricing plans updated!','success');
+      setEditingPlans(false);
+    } catch { showToast('Failed to save plans','error'); }
+    setSavingPlans(false);
+  };
+
   return (
     <div className="animate-fade-in">
       <div className="page-header-band" style={{ marginBottom:'1.75rem', background: 'var(--grad-purple)', padding: '1.5rem', borderRadius: 'var(--radius-lg)' }}>
@@ -734,18 +760,23 @@ function BillingTab({ schools, setSchools, showToast }) {
         </div>
       </div>
 
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(280px, 1fr))', gap:'1.25rem', marginBottom: '2rem' }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1rem' }}>
+        <h3 style={{ fontSize:'1rem' }}>Pricing Plans</h3>
+        <button className="btn btn-ghost btn-sm" onClick={openEditPlans} style={{ gap:5 }}><Pencil size={14}/> Edit Plans</button>
+      </div>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(260px, 1fr))', gap:'1.25rem', marginBottom:'2rem' }}>
         {plansList.map(plan => (
-           <div key={plan.id} className="card" style={{ padding: '1.5rem', borderTop: `4px solid var(--accent-purple)` }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 700 }}>{plan.name}</h3>
-                <span className="badge purple">{plan.price}</span>
-              </div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-                 <Users size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: 'middle' }}/>
-                 Student Limit: <strong>{plan.limit}</strong>
-              </div>
-           </div>
+          <div key={plan.id} className="card" style={{ padding:'1.5rem', borderTop:`4px solid var(--accent-purple)` }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'0.75rem' }}>
+              <h3 style={{ fontSize:'1.05rem', fontWeight:700 }}>{plan.name}</h3>
+              <span className="badge purple">{plan.price}</span>
+            </div>
+            {plan.description && <p style={{ fontSize:'0.8rem', color:'var(--text-muted)', marginBottom:'0.75rem' }}>{plan.description}</p>}
+            <div style={{ fontSize:'0.85rem', color:'var(--text-secondary)' }}>
+              <Users size={14} style={{ display:'inline', marginRight:6, verticalAlign:'middle' }}/>
+              Student Limit: <strong>{plan.limit}</strong>
+            </div>
+          </div>
         ))}
       </div>
 
@@ -790,7 +821,36 @@ function BillingTab({ schools, setSchools, showToast }) {
         </table>
       </div>
 
-      {/* Edit Quota Modal */}
+      {/* Edit Plans Modal */}
+      {editingPlans && (
+        <div className="modal-overlay">
+          <div className="modal-box" style={{ maxWidth:560, maxHeight:'90vh', overflowY:'auto' }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'1.25rem' }}>
+              <div><h3 style={{ fontSize:'1.15rem' }}>Edit Pricing Plans</h3><p style={{ fontSize:'0.85rem' }}>Changes saved to Firestore and apply globally.</p></div>
+              <button className="btn btn-ghost btn-icon" onClick={()=>setEditingPlans(false)}><X size={18}/></button>
+            </div>
+            {draftPlans.map((p,i) => (
+              <div key={p.id} className="card" style={{ padding:'1rem', marginBottom:'1rem', borderLeft:'3px solid var(--accent-purple)' }}>
+                <div style={{ fontSize:'0.75rem', fontWeight:700, color:'var(--accent-purple)', marginBottom:'0.75rem' }}>{p.name?.toUpperCase() || `PLAN ${i+1}`}</div>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.75rem', marginBottom:'0.75rem' }}>
+                  <div><label className="input-label">Plan Name</label><input className="input-field" value={p.name} onChange={e=>setDraftPlans(prev=>prev.map((x,j)=>j===i?{...x,name:e.target.value}:x))}/></div>
+                  <div><label className="input-label">Price Display</label><input className="input-field" value={p.price} placeholder="₹2,000/mo" onChange={e=>setDraftPlans(prev=>prev.map((x,j)=>j===i?{...x,price:e.target.value}:x))}/></div>
+                </div>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.75rem' }}>
+                  <div><label className="input-label">Student Limit</label><input className="input-field" value={p.limit} placeholder="500 or Unlimited" onChange={e=>setDraftPlans(prev=>prev.map((x,j)=>j===i?{...x,limit:e.target.value}:x))}/></div>
+                  <div><label className="input-label">Description</label><input className="input-field" value={p.description||''} placeholder="Short tagline" onChange={e=>setDraftPlans(prev=>prev.map((x,j)=>j===i?{...x,description:e.target.value}:x))}/></div>
+                </div>
+              </div>
+            ))}
+            <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
+              <button className="btn btn-ghost" onClick={()=>setEditingPlans(false)}>Cancel</button>
+              <button className="btn btn-purple" onClick={savePlans} disabled={savingPlans}>{savingPlans?'Saving…':'Save Plans'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit School Quota Modal */}
       {editingSchool && (
         <div className="modal-overlay">
           <div className="modal-box" style={{ maxWidth:400 }}>
@@ -1006,6 +1066,7 @@ export default function SuperAdminDashboard() {
   const [teacherCount, setTeacherCount] = useState(0);
   const [studentCount, setStudentCount] = useState(0);
   const [toast, setToast] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const showToast = (msg, type='success') => setToast({ msg, type });
 
@@ -1038,8 +1099,10 @@ export default function SuperAdminDashboard() {
   return (
     <>
       <div className="dashboard-layout">
+        {/* Mobile sidebar overlay */}
+        {sidebarOpen && <div className="sidebar-overlay open" onClick={()=>setSidebarOpen(false)}/>}
         {/* SIDEBAR */}
-        <aside className="sidebar">
+        <aside className={`sidebar${sidebarOpen?' open':''}`}>
           <div className="sidebar-logo">
             <div style={{ display:'flex', alignItems:'center', gap:10 }}>
               <div className="icon-box blue lg" style={{ flexShrink:0 }}><Shield size={22}/></div>
@@ -1055,7 +1118,7 @@ export default function SuperAdminDashboard() {
               <div key={sect}>
                 <div className="sidebar-section-title">{sect}</div>
                 {TABS.filter(t=>t.section===sect).map(item=>(
-                  <button key={item.id} className={`nav-item ${activeTab===item.id?'active':''}`} onClick={()=>setActiveTab(item.id)}>
+                <button key={item.id} className={`nav-item ${activeTab===item.id?'active':''}`} onClick={()=>{setActiveTab(item.id); setSidebarOpen(false);}}>
                     <item.icon size={17}/>
                     {item.label}
                   </button>
@@ -1078,6 +1141,9 @@ export default function SuperAdminDashboard() {
         {/* MAIN */}
         <main className="main-content">
           <div className="main-header">
+            <button className="hamburger-btn" onClick={()=>setSidebarOpen(o=>!o)} aria-label="Toggle menu">
+              <Menu size={20}/>
+            </button>
             <div>
               <h2 style={{ fontSize:'1.1rem', marginBottom:2 }}>{TABS.find(t=>t.id===activeTab)?.label}</h2>
               <div style={{ fontSize:'0.78rem', color:'var(--text-muted)' }}>

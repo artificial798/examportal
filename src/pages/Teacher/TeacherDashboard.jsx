@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  FilePlus, BarChart2, Trash2, Plus, LogOut,
+  FilePlus, BarChart2, Trash2, Plus, LogOut, Menu,
   GraduationCap, CheckCircle2, AlertTriangle, X,
   Clock, BookOpen, Sparkles, Edit2, Eye, EyeOff, Download, FileText
 } from 'lucide-react';
@@ -13,6 +13,7 @@ import { signOut } from 'firebase/auth';
 import { auth, db } from '../../firebase/config';
 import { useAuth } from '../../contexts/AuthContext';
 import AIQuestionGenerator from '../../components/AIQuestionGenerator';
+import PDFQuestionExtractor from '../../components/PDFQuestionExtractor';
 import { downloadDetailedResult, downloadClassMarksheet } from '../../services/pdfService';
 
 /* ── Toast ── */
@@ -30,17 +31,22 @@ function Toast({ msg, type, onClose }) {
 
 /* ── Question builder (shared) ── */
 function QuestionBuilder({ questions, setQuestions, subject, schoolId, showToast }) {
-  const [showAI, setShowAI] = useState(false);
+  const [showAI,  setShowAI]  = useState(false);
+  const [showPDF, setShowPDF] = useState(false);
 
   const updateQ   = (qi, f, v) => setQuestions(qs => qs.map((q, i) => i===qi ? {...q,[f]:v} : q));
   const updateOpt = (qi, oi, v) => setQuestions(qs => qs.map((q, i) => i===qi ? {...q, options: q.options.map((o,j)=>j===oi?v:o)} : q));
   const addQ      = () => setQuestions(qs => [...qs, { text:'', options:['','','',''], correctAnswer:'', marks: 1 }]);
   const removeQ   = (qi) => setQuestions(qs => qs.filter((_,i) => i!==qi));
   const handleAIInsert = (aiQs) => {
-    // Ensure AI questions have default marks
     const mappedAiQs = aiQs.map(q => ({ ...q, marks: 1 }));
     setQuestions(prev => { const c = prev.filter(q=>q.text.trim()); return [...c, ...mappedAiQs]; });
     setShowAI(false);
+  };
+  const handlePDFInsert = (pdfQs) => {
+    const mapped = pdfQs.map(q => ({ ...q, marks: 1 }));
+    setQuestions(prev => { const c = prev.filter(q=>q.text.trim()); return [...c, ...mapped]; });
+    setShowPDF(false);
   };
 
   return (
@@ -48,6 +54,10 @@ function QuestionBuilder({ questions, setQuestions, subject, schoolId, showToast
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1rem' }}>
         <h3 style={{ fontSize:'0.95rem' }}>Questions ({questions.length})</h3>
         <div style={{ display:'flex', gap:8 }}>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={()=>setShowPDF(true)}
+            style={{ color:'var(--accent-blue)', borderColor:'var(--accent-blue)', background:'var(--accent-blue-light)', gap:5 }}>
+            <FileText size={15}/> Upload PDF
+          </button>
           <button type="button" className="btn btn-ghost btn-sm" onClick={()=>setShowAI(true)}
             style={{ color:'var(--accent-purple)', borderColor:'var(--accent-purple)', background:'var(--accent-purple-light)', gap:5 }}>
             <Sparkles size={15}/> AI Generate
@@ -55,6 +65,7 @@ function QuestionBuilder({ questions, setQuestions, subject, schoolId, showToast
           <button type="button" className="btn btn-ghost btn-sm" onClick={addQ}><Plus size={15}/> Add</button>
         </div>
       </div>
+
 
       {questions.map((q, qi) => (
         <div key={qi} className="card" style={{ padding:'1.25rem', marginBottom:'1rem', borderLeft:'3px solid var(--accent-blue)' }}>
@@ -90,7 +101,8 @@ function QuestionBuilder({ questions, setQuestions, subject, schoolId, showToast
         </div>
       ))}
 
-      {showAI && <AIQuestionGenerator defaultSubject={subject} onInsert={handleAIInsert} onClose={()=>setShowAI(false)}/>}
+      {showAI  && <AIQuestionGenerator defaultSubject={subject} onInsert={handleAIInsert} onClose={()=>setShowAI(false)}/>}
+      {showPDF && <PDFQuestionExtractor onInsert={handlePDFInsert} onClose={()=>setShowPDF(false)}/>}
     </>
   );
 }
@@ -344,7 +356,6 @@ function ResultsTab({ schoolId, schoolName }) {
     })();
   }, [schoolId]);
 
-  // Unique classes from results
   const classes = [...new Set(results.map(r=>r.class).filter(Boolean))].sort();
 
   const filtered = results.filter(r =>
@@ -353,6 +364,9 @@ function ResultsTab({ schoolId, schoolName }) {
   );
   const avg    = filtered.length ? Math.round(filtered.reduce((s,r)=>s+(r.percentage||0),0)/filtered.length) : 0;
   const passed = filtered.filter(r=>(r.percentage||0)>=40).length;
+
+  const getGrade = (pct) => pct>=90?'A+':pct>=80?'A':pct>=70?'B+':pct>=60?'B':pct>=50?'C':pct>=40?'D':'F';
+  const getGradeColor = (pct) => pct>=80?'var(--accent-emerald)':pct>=60?'var(--accent-blue)':pct>=40?'var(--accent-amber)':'var(--accent-rose)';
 
   return (
     <div className="animate-fade-in">
@@ -383,14 +397,14 @@ function ResultsTab({ schoolId, schoolName }) {
 
       {/* Stats */}
       {filtered.length > 0 && (
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))', gap:'1rem', marginBottom:'1.25rem' }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))', gap:'1rem', marginBottom:'1.25rem' }}>
           {[
             {label:'Submissions', value:filtered.length,        color:'var(--accent-blue)'   },
             {label:'Avg Score',   value:`${avg}%`,              color:'var(--accent-purple)' },
             {label:'Passed',      value:passed,                  color:'var(--accent-emerald)'},
             {label:'Failed',      value:filtered.length-passed, color:'var(--accent-rose)'   },
           ].map(s=>(
-            <div key={s.label} className="card" style={{ padding:'1.25rem', textAlign:'center' }}>
+            <div key={s.label} className="card" style={{ padding:'1.25rem', textAlign:'center', borderTop:`3px solid ${s.color}` }}>
               <div style={{ fontSize:'1.8rem', fontWeight:800, fontFamily:'Space Grotesk', color:s.color, marginBottom:4 }}>{s.value}</div>
               <div style={{ fontSize:'0.78rem', fontWeight:600 }}>{s.label}</div>
             </div>
@@ -402,26 +416,40 @@ function ResultsTab({ schoolId, schoolName }) {
       <div className="card" style={{ overflow:'hidden' }}>
         {loading ? <div style={{ padding:'2rem', textAlign:'center', color:'var(--text-muted)' }}>Loading…</div> : (
           <table className="data-table">
-            <thead><tr><th>Student</th><th>Exam</th><th>Score</th><th>%</th><th>Result</th><th>Date</th><th>PDF</th></tr></thead>
+            <thead><tr><th>#</th><th>Student</th><th>Exam</th><th>Score</th><th>%</th><th>Grade</th><th>Result</th><th>Date</th><th>PDF</th></tr></thead>
             <tbody>
-              {filtered.length===0 && <tr><td colSpan={7}><div className="empty-state"><BarChart2 size={36}/><p>No results yet.</p></div></td></tr>}
-              {filtered.map(r=>{
+              {filtered.length===0 && <tr><td colSpan={9}><div className="empty-state"><BarChart2 size={36}/><p>No results yet.</p></div></td></tr>}
+              {[...filtered].sort((a,b)=>(b.percentage||0)-(a.percentage||0)).map((r, idx)=>{
                 const pass=(r.percentage||0)>=40;
+                const pct = r.percentage||0;
+                const grade = getGrade(pct);
+                const gradeColor = getGradeColor(pct);
                 return (
-                  <tr key={r.id}>
+                  <tr key={r.id} style={{ background: idx===0 ? 'rgba(217,119,6,0.04)' : undefined }}>
+                    <td style={{ textAlign:'center' }}>
+                      <span style={{
+                        display:'inline-flex', alignItems:'center', justifyContent:'center',
+                        width:24, height:24, borderRadius:'50%', fontSize:'0.75rem', fontWeight:800,
+                        background: idx===0?'linear-gradient(135deg,#f59e0b,#d97706)':idx===1?'#94a3b8':idx===2?'#cd7f32':'var(--bg-tertiary)',
+                        color: idx<3?'#fff':'var(--text-secondary)'
+                      }}>{idx+1}</span>
+                    </td>
                     <td>
                       <div style={{ fontWeight:600 }}>{r.studentName||'—'}</div>
                       <div style={{ fontSize:'0.73rem', color:'var(--text-muted)' }}>{r.rollNo?`Roll:${r.rollNo}`:''}{r.class?` | ${r.class}`:''}</div>
                     </td>
                     <td style={{ fontSize:'0.82rem', maxWidth:140 }}>{r.examTitle||'—'}</td>
-                    <td style={{ fontWeight:700 }}>{r.correct||0}/{r.totalMarks||0}</td>
+                    <td style={{ fontWeight:700 }}>{r.score||0}/{r.totalMarks||0}</td>
                     <td>
-                      <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                        <div style={{ width:44, height:5, background:'var(--border-light)', borderRadius:10, overflow:'hidden' }}>
-                          <div style={{ height:'100%', width:`${r.percentage||0}%`, background:pass?'var(--grad-emerald)':'var(--grad-rose)', borderRadius:10 }}/>
+                      <div>
+                        <span style={{ fontSize:'0.8rem', fontWeight:700, color:pass?'var(--accent-emerald)':'var(--accent-rose)' }}>{pct}%</span>
+                        <div style={{ marginTop:3, height:4, background:'var(--border-light)', borderRadius:10, overflow:'hidden', width:56 }}>
+                          <div style={{ height:'100%', width:`${pct}%`, background:pass?'var(--grad-emerald)':'var(--grad-rose)', borderRadius:10 }}/>
                         </div>
-                        <span style={{ fontSize:'0.8rem', fontWeight:700, color:pass?'var(--accent-emerald)':'var(--accent-rose)' }}>{r.percentage||0}%</span>
                       </div>
+                    </td>
+                    <td>
+                      <span style={{ fontWeight:800, fontSize:'0.9rem', color:gradeColor, padding:'2px 7px', background:`${gradeColor}15`, borderRadius:6 }}>{grade}</span>
                     </td>
                     <td><span className={`badge ${pass?'success':'danger'}`}>{pass?'Pass':'Fail'}</span></td>
                     <td style={{ fontSize:'0.75rem', color:'var(--text-muted)' }}>{r.submittedAt?.toDate?r.submittedAt.toDate().toLocaleDateString('en-IN'):'—'}</td>
@@ -440,7 +468,6 @@ function ResultsTab({ schoolId, schoolName }) {
         )}
       </div>
     </div>
-
   );
 }
 
@@ -460,6 +487,7 @@ export default function TeacherDashboard() {
   const [schoolId, setSchoolId]   = useState(null);
   const [schoolName, setSchoolName] = useState('');
   const [toast, setToast]         = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const showToast = (msg, type='success') => setToast({ msg, type });
   const handleLogout = async () => { await signOut(auth); navigate('/login'); };
@@ -486,7 +514,9 @@ export default function TeacherDashboard() {
   return (
     <>
       <div className="dashboard-layout">
-        <aside className="sidebar">
+        {/* Mobile overlay */}
+        {sidebarOpen && <div className="sidebar-overlay open" onClick={()=>setSidebarOpen(false)}/>}
+        <aside className={`sidebar${sidebarOpen?' open':''}`}>
           <div className="sidebar-logo">
             <div style={{ display:'flex', alignItems:'center', gap:10 }}>
               <div className="icon-box purple lg"><GraduationCap size={20}/></div>
@@ -520,6 +550,9 @@ export default function TeacherDashboard() {
 
         <main className="main-content">
           <div className="main-header">
+            <button className="hamburger-btn" onClick={()=>setSidebarOpen(o=>!o)} aria-label="Toggle menu">
+              <Menu size={20}/>
+            </button>
             <div>
               <h2 style={{ fontSize:'1.1rem', marginBottom:2 }}>{TABS.find(t=>t.id===activeTab)?.label}</h2>
               <div style={{ fontSize:'0.78rem', color:'var(--text-muted)' }}>
