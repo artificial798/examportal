@@ -50,12 +50,12 @@ function ConfirmModal({ message, onConfirm, onClose }) {
 }
 
 /* ─────────────── OVERVIEW ─────────────── */
-function OverviewTab({ schools, teacherCount, studentCount }) {
+function OverviewTab({ schools, teacherCount, studentCount, examCount }) {
   const stats = [
     { label:'Schools',  value: schools.length, icon: Building2,     color:'blue',   grad:'var(--grad-blue)',    hint:'Registered' },
     { label:'Teachers', value: teacherCount,   icon: GraduationCap, color:'purple', grad:'var(--grad-purple)',  hint:'Active' },
     { label:'Students', value: studentCount,   icon: Users,          color:'cyan',   grad:'var(--grad-cyan)',    hint:'Enrolled' },
-    { label:'System',   value:'99.8%',         icon: Activity,       color:'emerald',grad:'var(--grad-emerald)', hint:'Uptime' },
+    { label:'AI Exams',  value: examCount,      icon: FileText,       color:'emerald',grad:'var(--grad-emerald)', hint:'Generated' },
   ];
 
   return (
@@ -1065,6 +1065,7 @@ export default function SuperAdminDashboard() {
   const [schools, setSchools] = useState([]);
   const [teacherCount, setTeacherCount] = useState(0);
   const [studentCount, setStudentCount] = useState(0);
+  const [examCount, setExamCount] = useState(0);
   const [toast, setToast] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -1082,14 +1083,16 @@ export default function SuperAdminDashboard() {
   useEffect(() => {
     (async () => {
       try {
-        const [schoolSnap, teacherSnap, studentSnap] = await Promise.all([
+        const [schoolSnap, teacherSnap, studentSnap, examSnap] = await Promise.all([
           getDocs(query(collection(db,'schools'), orderBy('createdAt','desc'))),
           getDocs(collection(db,'teachers')),
-          getDocs(collection(db,'students'))
+          getDocs(collection(db,'students')),
+          getDocs(collection(db,'exams'))
         ]);
         setSchools(schoolSnap.docs.map(d=>({id:d.id,...d.data()})));
         setTeacherCount(teacherSnap.size);
         setStudentCount(studentSnap.size);
+        setExamCount(examSnap.size);
       } catch(e){ console.error(e); }
     })();
   }, []);
@@ -1160,7 +1163,7 @@ export default function SuperAdminDashboard() {
           </div>
 
           <div className="page-content">
-            {activeTab==='overview'  && <OverviewTab schools={schools} teacherCount={teacherCount} studentCount={studentCount}/>}
+            {activeTab==='overview'  && <OverviewTab schools={schools} teacherCount={teacherCount} studentCount={studentCount} examCount={examCount}/>}
             {activeTab==='analytics' && <AnalyticsTab schools={schools} teacherCount={teacherCount} studentCount={studentCount}/>}
             {activeTab==='schools'   && <SchoolsTab schools={schools} setSchools={setSchools} showToast={showToast}/>}
             {activeTab==='teachers'  && <TeachersTab schools={schools} showToast={showToast}/>}

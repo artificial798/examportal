@@ -12,6 +12,7 @@ export default function StudentDashboard() {
   const [exams, setExams]       = useState([]);
   const [results, setResults]   = useState([]);
   const [studentInfo, setStudentInfo] = useState(null);
+  const [schoolProfile, setSchoolProfile] = useState(null);
   const [loading, setLoading]   = useState(true);
   const [tab, setTab]           = useState('exams'); // 'exams' | 'results'
 
@@ -28,8 +29,23 @@ export default function StudentDashboard() {
         const userData = userDoc.exists() ? userDoc.data() : {};
         const schoolId = userData.schoolId;
 
-        // Load exams for this school — filter Active + class in JS (avoids Firestore composite index requirement)
+        // Load exams for this school — filter Active + class in JS
         if (schoolId) {
+          const sDoc = await getDoc(doc(db, 'schools', schoolId));
+          if (sDoc.exists()) {
+            const sd = sDoc.data();
+            setSchoolProfile({
+              logoBase64: sd.logoBase64 || '',
+              address:    sd.address    || '',
+              phone:      sd.phone      || '',
+              board:      sd.board      || '',
+              schoolCode: sd.schoolCode || '',
+              principal:  sd.principal  || '',
+              tagline:    sd.tagline    || '',
+              name:       sd.name       || ''
+            });
+          }
+
           const snap = await getDocs(query(collection(db,'exams'), where('schoolId','==',schoolId)));
           const stuData      = stuSnap.empty ? {} : stuSnap.docs[0].data();
           const studentClass = (stuData.class || userData.class || '').trim().toLowerCase();
@@ -125,7 +141,7 @@ export default function StudentDashboard() {
                     <p style={{ fontSize:'0.8rem', marginBottom:'1rem' }}>{exam.subject || exam.description || ''}</p>
                     <div style={{ display:'flex', gap:'1rem', fontSize:'0.83rem', color:'var(--text-secondary)', marginBottom:'1.25rem' }}>
                       <span style={{ display:'flex', alignItems:'center', gap:4 }}><Clock size={14}/> {exam.duration||60} mins</span>
-                      <span style={{ display:'flex', alignItems:'center', gap:4 }}><FileText size={14}/> {(exam.questions||[]).length} Qs</span>
+                      <span style={{ display:'flex', alignItems:'center', gap:4 }}><Award size={14}/> {exam.totalMarks || (exam.questions||[]).length} Marks</span>
                     </div>
                     {exam.instructions && (
                       <p style={{ fontSize:'0.78rem', color:'var(--text-muted)', marginBottom:'1rem', fontStyle:'italic', borderLeft:'3px solid var(--border-light)', paddingLeft:10 }}>
@@ -160,18 +176,39 @@ export default function StudentDashboard() {
             <div className="card" style={{ overflow:'hidden' }}>
               {results.length > 0 && (
                 <table className="data-table">
-                  <thead><tr><th>Exam</th><th>Subject</th><th>Submitted On</th><th>Status</th></tr></thead>
+                  <thead><tr><th>Exam</th><th>Score</th><th>%</th><th>Grade</th><th>Submitted On</th><th>Actions</th></tr></thead>
                   <tbody>
-                    {results.map(r => (
-                      <tr key={r.id}>
-                        <td style={{ fontWeight:600 }}>{r.examTitle||'—'}</td>
-                        <td><span className="badge cyan">{r.subject||'—'}</span></td>
-                        <td style={{ color:'var(--text-secondary)', fontSize:'0.83rem' }}>
-                          {r.submittedAt?.toDate ? r.submittedAt.toDate().toLocaleDateString('en-IN') : '—'}
-                        </td>
-                        <td><span className="badge success">Submitted</span></td>
-                      </tr>
-                    ))}
+                    {results.map(r => {
+                      const pct = r.percentage || 0;
+                      const getGrade = (p) => p>=90?'A+':p>=80?'A':p>=70?'B+':p>=60?'B':p>=50?'C':p>=40?'D':'F';
+                      const getGradeColor = (p) => p>=80?'var(--accent-emerald)':p>=60?'var(--accent-blue)':p>=40?'var(--accent-amber)':'var(--accent-rose)';
+                      return (
+                        <tr key={r.id}>
+                          <td>
+                            <div style={{ fontWeight:600 }}>{r.examTitle||'—'}</div>
+                            <div style={{ fontSize:'0.72rem', color:'var(--text-muted)' }}>{r.subject||'—'}</div>
+                          </td>
+                          <td style={{ fontWeight:700 }}>{r.score||0}/{r.totalMarks||0}</td>
+                          <td style={{ fontWeight:700, color:pct>=40?'var(--accent-emerald)':'var(--accent-rose)' }}>{pct}%</td>
+                          <td>
+                            <span style={{ fontWeight:800, fontSize:'0.85rem', color:getGradeColor(pct), padding:'2px 6px', background:`${getGradeColor(pct)}15`, borderRadius:6 }}>{getGrade(pct)}</span>
+                          </td>
+                          <td style={{ color:'var(--text-secondary)', fontSize:'0.83rem' }}>
+                            {r.submittedAt?.toDate ? r.submittedAt.toDate().toLocaleDateString('en-IN') : '—'}
+                          </td>
+                          <td>
+                             <button className="btn btn-ghost btn-sm" title="Download Report Card"
+                               onClick={() => {
+                                 const { downloadDetailedResult } = require('../../services/pdfService');
+                                 downloadDetailedResult(r, schoolProfile?.name || 'School', schoolProfile);
+                               }}
+                               style={{ color:'var(--accent-blue)', display:'flex', alignItems:'center', gap:5 }}>
+                               <Download size={14}/> Report
+                             </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}

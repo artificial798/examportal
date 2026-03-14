@@ -193,7 +193,7 @@ function CreateExamTab({ teacherInfo, schoolId, showToast, onCreated }) {
 }
 
 /* ── Edit Exam Modal ── */
-function EditExamModal({ exam, onSave, onClose, showToast }) {
+function EditExamModal({ exam, onSave, onClose, showToast, schoolId }) {
   const [form, setForm]         = useState({ title: exam.title||'', subject: exam.subject||'', targetClass: exam.targetClass||'', duration: exam.duration||60, instructions: exam.instructions||'', passingMarks: exam.passingMarks||40 });
   const [questions, setQuestions] = useState(exam.questions || []);
   const [saving, setSaving]     = useState(false);
@@ -202,7 +202,13 @@ function EditExamModal({ exam, onSave, onClose, showToast }) {
     if (!form.title.trim()) { showToast('Enter exam title.', 'error'); return; }
     setSaving(true);
     try {
-      const upd = { ...form, questions, status, updatedAt: serverTimestamp() };
+      const upd = { 
+        ...form, 
+        questions, 
+        totalMarks: questions.reduce((sum, q) => sum + (Number(q.marks) || 1), 0),
+        status, 
+        updatedAt: serverTimestamp() 
+      };
       await updateDoc(doc(db,'exams', exam.id), upd);
       showToast(status==='Active' ? '✅ Exam published!' : '💾 Draft saved.', 'success');
       onSave({ ...exam, ...upd });
@@ -215,9 +221,14 @@ function EditExamModal({ exam, onSave, onClose, showToast }) {
     <div className="modal-overlay" style={{ zIndex:9990, overflowY:'auto', alignItems:'flex-start', padding:'1rem' }}>
       <div className="modal-box" style={{ maxWidth:680, width:'100%', maxHeight:'90vh', overflowY:'auto' }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'1.25rem' }}>
-          <div>
-            <h3 style={{ marginBottom:4 }}>✏️ Edit Exam</h3>
-            <p style={{ fontSize:'0.85rem' }}>Update questions, status, and details.</p>
+          <div style={{ flex: 1 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
+              <h3 style={{ margin:0 }}>✏️ Edit Exam</h3>
+              <div style={{ background:'var(--accent-blue-light)', color:'var(--accent-blue)', padding:'4px 12px', borderRadius:20, fontSize:'0.8rem', fontWeight:700 }}>
+                Total Marks: {questions.reduce((sum, q) => sum + (Number(q.marks) || 1), 0)}
+              </div>
+            </div>
+            <p style={{ fontSize:'0.85rem', margin:0 }}>Update questions, status, and details.</p>
           </div>
           <button className="btn btn-ghost btn-icon" onClick={onClose}><X size={18}/></button>
         </div>
@@ -235,7 +246,7 @@ function EditExamModal({ exam, onSave, onClose, showToast }) {
           <div><label className="input-label">Instructions</label><textarea className="input-field" rows={2} value={form.instructions} onChange={e=>setForm({...form,instructions:e.target.value})}/></div>
         </div>
 
-        <QuestionBuilder questions={questions} setQuestions={setQuestions} subject={form.subject} showToast={showToast}/>
+        <QuestionBuilder questions={questions} setQuestions={setQuestions} subject={form.subject} schoolId={schoolId} showToast={showToast}/>
 
         <div style={{ display:'flex', gap:10, justifyContent:'flex-end', marginTop:'1.25rem', paddingTop:'1rem', borderTop:'1px solid var(--border-light)' }}>
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
@@ -250,7 +261,7 @@ function EditExamModal({ exam, onSave, onClose, showToast }) {
 }
 
 /* ── Exams List Tab ── */
-function ExamsTab({ exams, setExams, showToast }) {
+function ExamsTab({ exams, setExams, showToast, results, schoolId }) {
   const [confirmDel, setConfirmDel] = useState(null);
   const [editExam, setEditExam]     = useState(null);
 
@@ -277,7 +288,7 @@ function ExamsTab({ exams, setExams, showToast }) {
 
       <div className="card" style={{ overflow:'hidden' }}>
         <table className="data-table">
-          <thead><tr><th>Title</th><th>Subject</th><th>Class</th><th>Qs</th><th>Duration</th><th>Status</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Title</th><th>Subject</th><th>Class</th><th>Attempts</th><th>Status</th><th>Actions</th></tr></thead>
           <tbody>
             {exams.length===0 && <tr><td colSpan={7}><div className="empty-state"><FilePlus size={36}/><p>No exams yet. Go to "Create Exam" to build one.</p></div></td></tr>}
             {exams.map(e=>(
@@ -285,8 +296,11 @@ function ExamsTab({ exams, setExams, showToast }) {
                 <td style={{ fontWeight:600, maxWidth:180 }}>{e.title}</td>
                 <td><span className="badge purple">{e.subject||'—'}</span></td>
                 <td style={{ color:'var(--text-secondary)', fontSize:'0.82rem' }}>{e.targetClass||<span style={{color:'var(--text-muted)'}}>All</span>}</td>
-                <td style={{ color:'var(--text-secondary)' }}>{(e.questions||[]).length}</td>
-                <td><span style={{ display:'flex', alignItems:'center', gap:4, fontSize:'0.82rem' }}><Clock size={13}/>{e.duration||60}m</span></td>
+                <td>
+                  <span className="badge info" style={{ background:'var(--accent-purple-light)', color:'var(--accent-purple)', fontSize:'0.75rem' }}>
+                    {results.filter(r => r.examId === e.id).length} Submissions
+                  </span>
+                </td>
                 <td>
                   <button onClick={()=>toggleStatus(e)}
                     className={`badge ${e.status==='Active'?'success':'warning'}`}
@@ -313,6 +327,7 @@ function ExamsTab({ exams, setExams, showToast }) {
           showToast={showToast}
           onSave={(updated) => setExams(p=>p.map(e=>e.id===updated.id?updated:e))}
           onClose={()=>setEditExam(null)}
+          schoolId={schoolId}
         />
       )}
 
@@ -336,12 +351,13 @@ function ExamsTab({ exams, setExams, showToast }) {
 }
 
 /* ── Results Tab ── */
-function ResultsTab({ schoolId, schoolName }) {
+function ResultsTab({ schoolId, schoolName, schoolProfile }) {
   const [results,     setResults]     = useState([]);
   const [loading,     setLoading]     = useState(true);
   const [exams,       setExams]       = useState([]);
   const [filterExam,  setFilterExam]  = useState('all');
   const [filterClass, setFilterClass] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     if (!schoolId) return;
@@ -356,11 +372,21 @@ function ResultsTab({ schoolId, schoolName }) {
     })();
   }, [schoolId]);
 
+  const handleDeleteResult = async (res) => {
+    if (!window.confirm(`Delete result for ${res.studentName}? This allows them to retake.`)) return;
+    try {
+      await deleteDoc(doc(db, 'results', res.id));
+      setResults(p => p.filter(r => r.id !== res.id));
+    } catch (e) { console.error(e); }
+  };
+
   const classes = [...new Set(results.map(r=>r.class).filter(Boolean))].sort();
 
   const filtered = results.filter(r =>
     (filterExam  ==='all' || r.examId === filterExam) &&
-    (filterClass ==='all' || r.class  === filterClass)
+    (filterClass ==='all' || r.class  === filterClass) &&
+    (r.studentName?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+     r.rollNo?.toLowerCase().includes(searchQuery.toLowerCase()))
   );
   const avg    = filtered.length ? Math.round(filtered.reduce((s,r)=>s+(r.percentage||0),0)/filtered.length) : 0;
   const passed = filtered.filter(r=>(r.percentage||0)>=40).length;
@@ -385,9 +411,13 @@ function ResultsTab({ schoolId, schoolName }) {
             <option value="all">All Classes</option>
             {classes.map(c=><option key={c} value={c}>{c}</option>)}
           </select>
+          <div style={{ position:'relative' }}>
+            <Search size={16} style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)' }}/>
+            <input className="input-field" style={{ paddingLeft:32, width:180 }} placeholder="Search Roll No / Name…" value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} />
+          </div>
           {filtered.length > 0 && (
             <button className="btn btn-ghost btn-sm"
-              onClick={() => downloadClassMarksheet(filtered, filterClass==='all'?'':filterClass, '', schoolName)}
+              onClick={() => downloadClassMarksheet(filtered, filterClass==='all'?'':filterClass, '', schoolName, schoolProfile)}
               style={{ color:'var(--accent-purple)', borderColor:'var(--accent-purple)', background:'var(--accent-purple-light)', gap:5 }}>
               <Download size={14}/> Marksheet PDF
             </button>
@@ -397,16 +427,17 @@ function ResultsTab({ schoolId, schoolName }) {
 
       {/* Stats */}
       {filtered.length > 0 && (
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))', gap:'1rem', marginBottom:'1.25rem' }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))', gap:'1.25rem', marginBottom:'1.5rem' }}>
           {[
-            {label:'Submissions', value:filtered.length,        color:'var(--accent-blue)'   },
-            {label:'Avg Score',   value:`${avg}%`,              color:'var(--accent-purple)' },
-            {label:'Passed',      value:passed,                  color:'var(--accent-emerald)'},
-            {label:'Failed',      value:filtered.length-passed, color:'var(--accent-rose)'   },
+            {label:'Total Submissions', value:filtered.length,        color:'var(--accent-blue)',   icon:CheckCircle2, grad:'var(--accent-blue-light)' },
+            {label:'Average Percentage',value:`${avg}%`,              color:'var(--accent-purple)', icon:Sparkles,     grad:'var(--accent-purple-light)' },
+            {label:'Students Passed',   value:passed,                  color:'var(--accent-emerald)',icon:GraduationCap, grad:'var(--accent-emerald-light)'},
+            {label:'Students Failed',   value:filtered.length-passed, color:'var(--accent-rose)',   icon:AlertTriangle,  grad:'var(--accent-rose-light)'   },
           ].map(s=>(
-            <div key={s.label} className="card" style={{ padding:'1.25rem', textAlign:'center', borderTop:`3px solid ${s.color}` }}>
-              <div style={{ fontSize:'1.8rem', fontWeight:800, fontFamily:'Space Grotesk', color:s.color, marginBottom:4 }}>{s.value}</div>
-              <div style={{ fontSize:'0.78rem', fontWeight:600 }}>{s.label}</div>
+            <div key={s.label} className="card" style={{ padding:'1.5rem', textAlign:'left', position:'relative', overflow:'hidden', borderBottom:`3px solid ${s.color}` }}>
+              <div style={{ position:'absolute', top:-10, right:-10, opacity:0.1, color:s.color }}><s.icon size={80}/></div>
+              <div style={{ fontSize:'1.75rem', fontWeight:800, fontFamily:'Space Grotesk', color:s.color, marginBottom:4 }}>{s.value}</div>
+              <div style={{ fontSize:'0.75rem', fontWeight:700, color:'var(--text-secondary)', textTransform:'uppercase', letterSpacing:'.04em' }}>{s.label}</div>
             </div>
           ))}
         </div>
@@ -454,11 +485,23 @@ function ResultsTab({ schoolId, schoolName }) {
                     <td><span className={`badge ${pass?'success':'danger'}`}>{pass?'Pass':'Fail'}</span></td>
                     <td style={{ fontSize:'0.75rem', color:'var(--text-muted)' }}>{r.submittedAt?.toDate?r.submittedAt.toDate().toLocaleDateString('en-IN'):'—'}</td>
                     <td>
-                      <button className="btn btn-ghost btn-icon btn-sm" title="Download Detailed Result PDF"
-                        onClick={() => downloadDetailedResult(r, schoolName)}
-                        style={{ color:'var(--accent-blue)' }}>
-                        <FileText size={15}/>
-                      </button>
+                      <div style={{ display:'flex', gap:4 }}>
+                        <button className="btn btn-ghost btn-icon btn-sm" title="Allow Retake (Reset Score)"
+                          onClick={() => handleDeleteResult(r)}
+                          style={{ color:'var(--accent-purple)' }}>
+                          <RotateCcw size={15}/>
+                        </button>
+                        <button className="btn btn-ghost btn-icon btn-sm" title="Download Results PDF"
+                          onClick={() => downloadDetailedResult(r, schoolName, schoolProfile)}
+                          style={{ color:'var(--accent-blue)' }}>
+                          <FileText size={15}/>
+                        </button>
+                        <button className="btn btn-ghost btn-icon btn-sm" title="Delete Result (Retake)"
+                          onClick={() => handleDeleteResult(r)}
+                          style={{ color:'var(--accent-rose)' }}>
+                          <Trash2 size={14}/>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -483,9 +526,11 @@ export default function TeacherDashboard() {
   const { currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState('exams');
   const [exams, setExams]         = useState([]);
+  const [results, setResults]     = useState([]);
   const [teacherInfo, setTeacherInfo] = useState(null);
   const [schoolId, setSchoolId]   = useState(null);
   const [schoolName, setSchoolName] = useState('');
+  const [schoolProfile, setSchoolProfile] = useState(null);
   const [toast, setToast]         = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -501,11 +546,28 @@ export default function TeacherDashboard() {
         setTeacherInfo(userData);
         const sid = userData.schoolId;
         setSchoolId(sid || null);
-        if (sid) {
-          const snap = await getDocs(query(collection(db,'exams'), where('schoolId','==',sid)));
-          setExams(snap.docs.map(d=>({id:d.id,...d.data()})));
+      if (sid) {
+          const [eSnap, rSnap] = await Promise.all([
+            getDocs(query(collection(db,'exams'), where('schoolId','==',sid))),
+            getDocs(query(collection(db,'results'), where('schoolId','==',sid)))
+          ]);
+          setExams(eSnap.docs.map(d=>({id:d.id,...d.data()})));
+          setResults(rSnap.docs.map(d=>({id:d.id,...d.data()})));
+
           const sDoc = await getDoc(doc(db,'schools', sid));
-          if (sDoc.exists()) setSchoolName(sDoc.data().name);
+          if (sDoc.exists()) {
+            const sData = sDoc.data();
+            setSchoolName(sData.name);
+            setSchoolProfile({
+              logoBase64: sData.logoBase64 || '',
+              address:    sData.address || '',
+              phone:      sData.phone || '',
+              board:      sData.board || '',
+              schoolCode: sData.schoolCode || '',
+              principal:  sData.principal || '',
+              tagline:    sData.tagline || ''
+            });
+          }
         }
       } catch(e) { console.error(e); }
     })();
@@ -569,9 +631,9 @@ export default function TeacherDashboard() {
           </div>
 
           <div className="page-content">
-            {activeTab==='exams'   && <ExamsTab exams={exams} setExams={setExams} showToast={showToast}/>}
+            {activeTab==='exams'   && <ExamsTab exams={exams} setExams={setExams} showToast={showToast} results={results} schoolId={schoolId}/>}
             {activeTab==='create'  && <CreateExamTab teacherInfo={teacherInfo} schoolId={schoolId} showToast={showToast} onCreated={e=>{setExams(p=>[e,...p]); setActiveTab('exams');}}/>}
-            {activeTab === 'results' && <ResultsTab schoolId={schoolId} schoolName={schoolName} />}
+            {activeTab === 'results' && <ResultsTab schoolId={schoolId} schoolName={schoolName} schoolProfile={schoolProfile}/>}
           </div>
         </main>
       </div>

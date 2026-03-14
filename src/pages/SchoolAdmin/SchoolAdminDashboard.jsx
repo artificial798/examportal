@@ -4,7 +4,7 @@ import {
   Users, GraduationCap, BookOpen, BarChart3, LogOut, Menu,
   PlusCircle, Search, Trash2, X, AlertTriangle, CheckCircle2,
   Building2, UserPlus, FileText, Clock, Sparkles, Plus, FilePlus, Download, BarChart2,
-  Image, Save, Phone, MapPin, Award, User
+  Image, Save, Phone, MapPin, Award, User, Edit2, Eye, EyeOff, RotateCcw
 } from 'lucide-react';
 import {
   collection, getDocs, addDoc, deleteDoc, doc,
@@ -626,14 +626,225 @@ function SchoolProfileTab({ school, showToast }) {
   );
 }
 
+/* ──────────────── EDIT EXAM MODAL ──────────────── */
+function EditExamModal({ exam, onSave, onClose, showToast }) {
+  const [form, setForm]         = useState({ 
+    title: exam.title||'', 
+    subject: exam.subject||'', 
+    duration: exam.duration||60, 
+    instructions: exam.instructions||'', 
+    passingMarks: exam.passingMarks||40 
+  });
+  const [questions, setQuestions] = useState(exam.questions || []);
+  const [saving, setSaving]     = useState(false);
+  const [showAI, setShowAI]     = useState(false);
+  const [showPDF, setShowPDF]   = useState(false);
+
+  const handleAIInsert = (newQs) => {
+    setQuestions(p => [...p, ...newQs.map(q => ({ ...q, marks: 1 }))]);
+    setShowAI(false);
+  };
+  const handlePDFInsert = (newQs) => {
+    setQuestions(p => [...p, ...newQs.map(q => ({ ...q, marks: 1 }))]);
+    setShowPDF(false);
+  };
+
+  const updateQ = (qi,field,val) => setQuestions(qs=>qs.map((q,i)=>i===qi?{...q,[field]:val}:q));
+  const updateOpt = (qi,oi,val) => setQuestions(qs=>qs.map((q,i)=>i===qi?{...q,options:q.options.map((o,j)=>j===oi?val:o)}:q));
+  const addQ = () => setQuestions(qs=>[...qs,{text:'',options:['','','',''],correctAnswer:'', marks: 1}]);
+  const removeQ = (qi) => setQuestions(qs=>qs.filter((_,i)=>i!==qi));
+
+  const handleSave = async (status) => {
+    if (!form.title.trim()) { showToast('Enter exam title.', 'error'); return; }
+    setSaving(true);
+    try {
+      const upd = { 
+        ...form, 
+        questions, 
+        totalMarks: questions.reduce((sum, q) => sum + (Number(q.marks) || 1), 0),
+        status, 
+        updatedAt: serverTimestamp() 
+      };
+      await updateDoc(doc(db,'exams', exam.id), upd);
+      showToast(status==='Active' ? '✅ Exam published!' : '💾 Draft saved.', 'success');
+      onSave({ ...exam, ...upd });
+      onClose();
+    } catch(e) { showToast('Error: '+e.message,'error'); }
+    setSaving(false);
+  };
+
+  return (
+    <div className="modal-overlay" style={{ zIndex:9990, overflowY:'auto', alignItems:'flex-start', padding:'1rem' }}>
+      <div className="modal-box" style={{ maxWidth:680, width:'100%' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'1.25rem' }}>
+          <div style={{ flex:1 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
+              <h3 style={{ margin:0 }}>✏️ Edit Exam</h3>
+              <div style={{ background:'var(--accent-blue-light)', color:'var(--accent-blue)', padding:'4px 12px', borderRadius:20, fontSize:'0.8rem', fontWeight:700 }}>
+                Total Marks: {questions.reduce((sum, q) => sum + (Number(q.marks) || 1), 0)}
+              </div>
+            </div>
+            <p style={{ fontSize:'0.85rem', margin:0 }}>Update questions, status, and details.</p>
+          </div>
+          <button className="btn btn-ghost btn-icon" onClick={onClose}><X size={18}/></button>
+        </div>
+
+        <div className="card" style={{ padding:'1.25rem', marginBottom:'1.25rem' }}>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'1rem', marginBottom:'1rem' }}>
+            <div><label className="input-label">Title *</label><input required className="input-field" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/></div>
+            <div><label className="input-label">Subject</label><input className="input-field" value={form.subject} onChange={e=>setForm({...form,subject:e.target.value})}/></div>
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'1rem', marginBottom:'1rem' }}>
+            <div><label className="input-label">Duration (mins)</label><input type="number" className="input-field" value={form.duration} onChange={e=>setForm({...form,duration:Number(e.target.value)})}/></div>
+            <div><label className="input-label">Passing %</label><input type="number" className="input-field" value={form.passingMarks} onChange={e=>setForm({...form,passingMarks:Number(e.target.value)})}/></div>
+          </div>
+          <div><label className="input-label">Instructions</label><textarea className="input-field" rows={2} value={form.instructions} onChange={e=>setForm({...form,instructions:e.target.value})}/></div>
+        </div>
+
+        <div style={{marginBottom:'1rem'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.75rem'}}>
+            <h3 style={{fontSize:'0.9rem'}}>Questions ({questions.length})</h3>
+            <div style={{ display:'flex', gap:8 }}>
+              <button className="btn btn-ghost btn-sm" onClick={()=>setShowPDF(true)} style={{ color:'var(--accent-blue)', fontSize:'0.75rem' }}><FileText size={14}/> PDF</button>
+              <button className="btn btn-ghost btn-sm" onClick={()=>setShowAI(true)} style={{ color:'var(--accent-purple)', fontSize:'0.75rem' }}><Sparkles size={14}/> AI</button>
+              <button className="btn btn-ghost btn-sm" onClick={addQ} style={{ fontSize:'0.75rem' }}><Plus size={14}/> Add</button>
+            </div>
+          </div>
+          {questions.map((q,qi)=>(
+            <div key={qi} className="card" style={{padding:'1rem',marginBottom:'0.75rem',borderLeft:'3px solid var(--accent-blue)'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.5rem'}}>
+                <span style={{fontSize:'0.8rem',fontWeight:700,color:'var(--accent-blue)'}}>Q{qi+1}</span>
+                <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                   <label style={{ fontSize:'0.7rem' }}>Marks</label>
+                   <input type="number" className="input-field" style={{ width:50, padding:'2px 6px' }} value={q.marks || 1} onChange={e=>updateQ(qi,'marks',Number(e.target.value))}/>
+                   {questions.length>1&&<button className="btn btn-ghost btn-icon btn-sm" style={{color:'var(--accent-rose)'}} onClick={()=>removeQ(qi)}><Trash2 size={14}/></button>}
+                </div>
+              </div>
+              <textarea className="input-field" rows={1} style={{marginBottom:'0.5rem'}} value={q.text} onChange={e=>updateQ(qi,'text',e.target.value)}/>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.5rem',marginBottom:'0.5rem'}}>
+                {q.options.map((opt,oi)=>(<input key={oi} className="input-field" style={{fontSize:'0.8rem'}} value={opt} onChange={e=>updateOpt(qi,oi,e.target.value)} placeholder={`Opt ${String.fromCharCode(65+oi)}`}/>))}
+              </div>
+              <div>
+                <label className="input-label" style={{fontSize:'0.75rem'}}>Correct Answer</label>
+                <select className="input-field" style={{fontSize:'0.8rem',padding:'4px 8px'}} value={q.correctAnswer} onChange={e=>updateQ(qi,'correctAnswer',e.target.value)}>
+                  <option value="">— Select correct —</option>
+                  {q.options.filter(o=>o.trim()).map((opt,oi)=>(<option key={oi} value={opt}>{String.fromCharCode(65+oi)}. {opt}</option>))}
+                </select>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display:'flex', gap:10, justifyContent:'flex-end', marginTop:'1.25rem' }}>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-ghost" onClick={()=>handleSave('Draft')} disabled={saving}>💾 Save as Draft</button>
+          <button className="btn btn-primary" onClick={()=>handleSave('Active')} disabled={saving}>
+            {saving?'Saving…':'✅ Save & Publish'}
+          </button>
+        </div>
+
+        {showAI  && <AIQuestionGenerator defaultSubject={form.subject} onInsert={handleAIInsert} onClose={()=>setShowAI(false)}/>}
+        {showPDF && <PDFQuestionExtractor onInsert={handlePDFInsert} onClose={()=>setShowPDF(false)}/>}
+      </div>
+    </div>
+  );
+}
+
+/* ──────────────── EXAMS TAB ──────────────── */
+function ExamsTab({ schoolId, showToast }) {
+  const [exams, setExams]       = useState([]);
+  const [results, setResults]   = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [editExam, setEditExam] = useState(null);
+  const [confirmDel, setConfirmDel] = useState(null);
+
+  useEffect(() => {
+    if (!schoolId) return;
+    (async () => {
+      const [eSnap, rSnap] = await Promise.all([
+        getDocs(query(collection(db,'exams'), where('schoolId','==',schoolId))),
+        getDocs(query(collection(db,'results'), where('schoolId','==',schoolId)))
+      ]);
+      setExams(eSnap.docs.map(d=>({id:d.id,...d.data()})));
+      setResults(rSnap.docs.map(d=>({id:d.id,...d.data()})));
+      setLoading(false);
+    })();
+  }, [schoolId]);
+
+  const handleDelete = async (id) => {
+    await deleteDoc(doc(db,'exams',id));
+    setExams(p=>p.filter(e=>e.id!==id));
+    showToast('Exam deleted.','success');
+    setConfirmDel(null);
+  };
+
+  const toggleStatus = async (exam) => {
+    const newStatus = exam.status==='Active' ? 'Draft' : 'Active';
+    await updateDoc(doc(db,'exams',exam.id), { status:newStatus, updatedAt:serverTimestamp() });
+    setExams(p=>p.map(e=>e.id===exam.id?{...e,status:newStatus}:e));
+    showToast(`Exam ${newStatus==='Active'?'published ✅':'unpublished'}.`, 'success');
+  };
+
+  return (
+    <div className="animate-fade-in">
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1.25rem' }}>
+        <div>
+          <h2 style={{ fontSize:'1.2rem', marginBottom:4 }}>Manage Exams</h2>
+          <p style={{ fontSize:'0.85rem' }}>View, edit, or publish exams for your school.</p>
+        </div>
+      </div>
+
+      <div className="card" style={{ overflow:'hidden' }}>
+        {loading ? <div style={{ padding:'2rem', textAlign:'center' }}>Loading…</div> : (
+          <table className="data-table">
+            <thead><tr><th>Title</th><th>Subject</th><th>Qs</th><th>Attempts</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody>
+              {exams.length===0 && <tr><td colSpan={6}><div className="empty-state"><BookOpen size={36}/><p>No exams created yet.</p></div></td></tr>}
+              {exams.map(e=>(
+                <tr key={e.id}>
+                  <td style={{ fontWeight:600 }}>{e.title}</td>
+                  <td><span className="badge info">{e.subject||'—'}</span></td>
+                  <td>{(e.questions||[]).length}</td>
+                  <td>
+                    <span className="badge info" style={{ background:'var(--accent-blue-light)', color:'var(--accent-blue)' }}>
+                      {results.filter(r => r.examId === e.id).length} Submissions
+                    </span>
+                  </td>
+                  <td>
+                    <button onClick={()=>toggleStatus(e)}
+                      className={`badge ${e.status==='Active'?'success':'warning'}`}
+                      style={{ cursor:'pointer', border:'none', fontFamily:'inherit', display:'flex', alignItems:'center', gap:4 }}>
+                      {e.status==='Active' ? <><Eye size={12}/> Active</> : <><EyeOff size={12}/> Draft</>}
+                    </button>
+                  </td>
+                  <td>
+                    <div style={{ display:'flex', gap:6 }}>
+                      <button className="btn btn-ghost btn-icon btn-sm" onClick={()=>setEditExam(e)}><Edit2 size={14}/></button>
+                      <button className="btn btn-ghost btn-icon btn-sm" style={{ color:'var(--accent-rose)' }} onClick={()=>setConfirmDel(e.id)}><Trash2 size={14}/></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {editExam && <EditExamModal exam={editExam} onSave={(upd)=>setExams(p=>p.map(e=>e.id===upd.id?upd:e))} onClose={()=>setEditExam(null)} showToast={showToast}/>}
+      {confirmDel && <ConfirmModal message="Delete this exam and all its questions? Existing results will be kept." onConfirm={()=>handleDelete(confirmDel)} onClose={()=>setConfirmDel(null)}/>}
+    </div>
+  );
+}
+
 /* ──────────────── MARKSHEET / RESULTS TAB ──────────────── */
-function MarksheetTab({ schoolId, schoolName, schoolProfile }) {
+function MarksheetTab({ schoolId, schoolName, schoolProfile, showToast }) {
   const [results,      setResults]      = useState([]);
   const [exams,        setExams]        = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [filterClass,  setFilterClass]  = useState('');
   const [filterSubject,setFilterSubject]= useState('');
   const [filterExam,   setFilterExam]   = useState('all');
+  const [searchQuery,  setSearchQuery]  = useState('');
 
   useEffect(() => {
     if (!schoolId) return;
@@ -648,13 +859,24 @@ function MarksheetTab({ schoolId, schoolName, schoolProfile }) {
     })();
   }, [schoolId]);
 
+  const handleDeleteResult = async (res) => {
+    if (!window.confirm(`Delete result for ${res.studentName}? This allows them to retake.`)) return;
+    try {
+      await deleteDoc(doc(db, 'results', res.id));
+      setResults(p => p.filter(r => r.id !== res.id));
+      showToast('Result deleted. Student can now retake.', 'success');
+    } catch (e) { showToast('Error: '+e.message, 'error'); }
+  };
+
   const classes  = [...new Set(results.map(r=>r.class).filter(Boolean))].sort();
   const subjects = [...new Set(results.map(r=>r.subject).filter(Boolean))].sort();
 
   const filtered = results.filter(r =>
     (filterClass   === '' || (r.class||'').toLowerCase()   === filterClass.toLowerCase()) &&
     (filterSubject === '' || (r.subject||'').toLowerCase() === filterSubject.toLowerCase()) &&
-    (filterExam === 'all' || r.examId === filterExam)
+    (filterExam === 'all' || r.examId === filterExam) &&
+    ((r.studentName||'').toLowerCase().includes(searchQuery.toLowerCase()) || 
+     (r.rollNo||'').toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
   const avg    = filtered.length ? Math.round(filtered.reduce((s,r)=>s+(r.percentage||0),0)/filtered.length) : 0;
@@ -699,6 +921,10 @@ function MarksheetTab({ schoolId, schoolName, schoolProfile }) {
           <option value="all">All Exams</option>
           {exams.map(e=><option key={e.id} value={e.id}>{e.title}</option>)}
         </select>
+        <div style={{ position:'relative', flex:1, minWidth:180 }}>
+          <Search size={16} style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)' }}/>
+          <input className="input-field" style={{ paddingLeft:32, width:'100%' }} placeholder="Search Roll No / Name…" value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} />
+        </div>
       </div>
 
       {/* Stats */}
@@ -763,11 +989,18 @@ function MarksheetTab({ schoolId, schoolName, schoolProfile }) {
                     <td><span className={`badge ${pass?'success':'danger'}`}>{pass?'Pass':'Fail'}</span></td>
                     <td style={{ fontSize:'0.75rem', color:'var(--text-muted)' }}>{r.submittedAt?.toDate?r.submittedAt.toDate().toLocaleDateString('en-IN'):'—'}</td>
                     <td>
-                      <button className="btn btn-ghost btn-icon btn-sm" title="Download Report Card PDF"
-                        onClick={()=>downloadDetailedResult(r, schoolName, schoolProfile)}
-                        style={{ color:'var(--accent-blue)' }}>
-                        <FileText size={15}/>
-                      </button>
+                      <div style={{ display:'flex', gap:4 }}>
+                        <button className="btn btn-ghost btn-icon btn-sm" title="Download Report Card PDF"
+                          onClick={()=>downloadDetailedResult(r, schoolName, schoolProfile)}
+                          style={{ color:'var(--accent-blue)' }}>
+                          <FileText size={15}/>
+                        </button>
+                        <button className="btn btn-ghost btn-icon btn-sm" title="Allow Retake (Reset Score)"
+                          onClick={()=>handleDeleteResult(r)}
+                          style={{ color:'var(--accent-purple)' }}>
+                          <RotateCcw size={15}/>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -785,6 +1018,7 @@ const TABS = [
   { id:'overview',   label:'Overview',       icon:BarChart3     },
   { id:'teachers',   label:'Teachers',       icon:GraduationCap },
   { id:'students',   label:'Students',       icon:Users          },
+  { id:'exams',      label:'Exams',          icon:BookOpen       },
   { id:'create',     label:'Create Exam',    icon:FilePlus       },
   { id:'marksheet',  label:'Results',        icon:FileText       },
   { id:'profile',    label:'School Profile', icon:Image         },
@@ -903,8 +1137,9 @@ export default function SchoolAdminDashboard() {
             {activeTab === 'overview'   && <OverviewTab school={school} teacherCount={teacherCount} studentCount={studentCount}/>}
             {activeTab === 'teachers'   && <TeachersTab schoolId={school?.id} schoolSubjects={school?.subjects} showToast={showToast}/>}
             {activeTab === 'students'   && <StudentsTab schoolId={school?.id} schoolSubjects={school?.subjects} showToast={showToast}/>}
+            {activeTab === 'exams'      && <ExamsTab schoolId={school?.id} showToast={showToast}/>}
             {activeTab === 'create'     && <CreateExamTab schoolId={school?.id} schoolSubjects={school?.subjects} showToast={showToast}/>}
-            {activeTab === 'marksheet'  && <MarksheetTab schoolId={school?.id} schoolName={school?.name||''} schoolProfile={schoolProfile}/>}
+            {activeTab === 'marksheet'  && <MarksheetTab schoolId={school?.id} schoolName={school?.name||''} schoolProfile={schoolProfile} showToast={showToast}/>}
             {activeTab === 'profile'    && <SchoolProfileTab school={school} showToast={showToast}/>}
           </div>
         </main>
