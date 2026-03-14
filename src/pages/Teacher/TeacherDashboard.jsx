@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   FilePlus, BarChart2, Trash2, Plus, LogOut, Menu,
   GraduationCap, CheckCircle2, AlertTriangle, X,
-  Clock, BookOpen, Sparkles, Edit2, Eye, EyeOff, Download, FileText
+  Clock, BookOpen, Sparkles, Edit2, Eye, EyeOff, Download, FileText, Search, RotateCcw
 } from 'lucide-react';
 import {
   collection, getDocs, addDoc, deleteDoc, doc,
@@ -351,33 +351,39 @@ function ExamsTab({ exams, setExams, showToast, results, schoolId }) {
 }
 
 /* ── Results Tab ── */
-function ResultsTab({ schoolId, schoolName, schoolProfile }) {
-  const [results,     setResults]     = useState([]);
-  const [loading,     setLoading]     = useState(true);
-  const [exams,       setExams]       = useState([]);
+function ResultsTab({ schoolId, schoolName, schoolProfile, results, setResults, showToast, exams }) {
+  const [loading,     setLoading]     = useState(false);
   const [filterExam,  setFilterExam]  = useState('all');
   const [filterClass, setFilterClass] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  useEffect(() => {
-    if (!schoolId) return;
-    (async () => {
-      const [rSnap, eSnap] = await Promise.all([
-        getDocs(query(collection(db,'results'), where('schoolId','==',schoolId))),
-        getDocs(query(collection(db,'exams'), where('schoolId','==',schoolId))),
-      ]);
-      setResults(rSnap.docs.map(d=>({id:d.id,...d.data()})));
-      setExams(eSnap.docs.map(d=>({id:d.id,...d.data()})));
-      setLoading(false);
-    })();
-  }, [schoolId]);
-
   const handleDeleteResult = async (res) => {
-    if (!window.confirm(`Delete result for ${res.studentName}? This allows them to retake.`)) return;
+    if (!window.confirm(`Allow ${res.studentName} to retake? Previous score will be deleted.`)) return;
     try {
       await deleteDoc(doc(db, 'results', res.id));
       setResults(p => p.filter(r => r.id !== res.id));
-    } catch (e) { console.error(e); }
+      showToast('Result cleared. Student can now retake.', 'success');
+    } catch (e) { showToast('Action failed.', 'error'); }
+  };
+
+  const handleApproveResult = async (res) => {
+    try {
+      await updateDoc(doc(db, 'results', res.id), { isApproved: true });
+      setResults(p => p.map(r => r.id === res.id ? { ...r, isApproved: true } : r));
+      showToast(`Result for ${res.studentName} approved.`, 'success');
+    } catch (e) { showToast('Approval failed.', 'error'); }
+  };
+
+  const handleBulkApprove = async () => {
+    const unapproved = filtered.filter(r => !r.isApproved);
+    if (unapproved.length === 0) { showToast('No pending results to approve.', 'info'); return; }
+    if (!window.confirm(`Approve all ${unapproved.length} pending results?`)) return;
+    
+    try {
+      await Promise.all(unapproved.map(r => updateDoc(doc(db, 'results', r.id), { isApproved: true })));
+      setResults(p => p.map(r => unapproved.some(u => u.id === r.id) ? { ...r, isApproved: true } : r));
+      showToast(`Approved ${unapproved.length} results!`, 'success');
+    } catch (e) { showToast('Bulk approval failed.', 'error'); }
   };
 
   const classes = [...new Set(results.map(r=>r.class).filter(Boolean))].sort();
@@ -385,8 +391,8 @@ function ResultsTab({ schoolId, schoolName, schoolProfile }) {
   const filtered = results.filter(r =>
     (filterExam  ==='all' || r.examId === filterExam) &&
     (filterClass ==='all' || r.class  === filterClass) &&
-    (r.studentName?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-     r.rollNo?.toLowerCase().includes(searchQuery.toLowerCase()))
+    ((r.studentName||'').toLowerCase().includes(searchQuery.toLowerCase()) || 
+     (r.rollNo||'').toLowerCase().includes(searchQuery.toLowerCase()))
   );
   const avg    = filtered.length ? Math.round(filtered.reduce((s,r)=>s+(r.percentage||0),0)/filtered.length) : 0;
   const passed = filtered.filter(r=>(r.percentage||0)>=40).length;
@@ -416,11 +422,18 @@ function ResultsTab({ schoolId, schoolName, schoolProfile }) {
             <input className="input-field" style={{ paddingLeft:32, width:180 }} placeholder="Search Roll No / Name…" value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} />
           </div>
           {filtered.length > 0 && (
-            <button className="btn btn-ghost btn-sm"
-              onClick={() => downloadClassMarksheet(filtered, filterClass==='all'?'':filterClass, '', schoolName, schoolProfile)}
-              style={{ color:'var(--accent-purple)', borderColor:'var(--accent-purple)', background:'var(--accent-purple-light)', gap:5 }}>
-              <Download size={14}/> Marksheet PDF
-            </button>
+            <>
+              <button className="btn btn-ghost btn-sm"
+                onClick={handleBulkApprove}
+                style={{ color:'var(--accent-emerald)', borderColor:'var(--accent-emerald)', background:'var(--accent-emerald-light)', gap:5 }}>
+                <CheckCircle2 size={14}/> Approve All
+              </button>
+              <button className="btn btn-ghost btn-sm"
+                onClick={() => downloadClassMarksheet(filtered, filterClass==='all'?'':filterClass, '', schoolName, schoolProfile)}
+                style={{ color:'var(--accent-purple)', borderColor:'var(--accent-purple)', background:'var(--accent-purple-light)', gap:5 }}>
+                <Download size={14}/> Marksheet PDF
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -447,7 +460,7 @@ function ResultsTab({ schoolId, schoolName, schoolProfile }) {
       <div className="card" style={{ overflow:'hidden' }}>
         {loading ? <div style={{ padding:'2rem', textAlign:'center', color:'var(--text-muted)' }}>Loading…</div> : (
           <table className="data-table">
-            <thead><tr><th>#</th><th>Student</th><th>Exam</th><th>Score</th><th>%</th><th>Grade</th><th>Result</th><th>Date</th><th>PDF</th></tr></thead>
+            <thead><tr><th>#</th><th>Student</th><th>Exam</th><th>Score</th><th>%</th><th>Grade</th><th>Result</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>
               {filtered.length===0 && <tr><td colSpan={9}><div className="empty-state"><BarChart2 size={36}/><p>No results yet.</p></div></td></tr>}
               {[...filtered].sort((a,b)=>(b.percentage||0)-(a.percentage||0)).map((r, idx)=>{
@@ -485,7 +498,19 @@ function ResultsTab({ schoolId, schoolName, schoolProfile }) {
                     <td><span className={`badge ${pass?'success':'danger'}`}>{pass?'Pass':'Fail'}</span></td>
                     <td style={{ fontSize:'0.75rem', color:'var(--text-muted)' }}>{r.submittedAt?.toDate?r.submittedAt.toDate().toLocaleDateString('en-IN'):'—'}</td>
                     <td>
+                      <span className={`badge ${r.isApproved ? 'success' : 'warning'}`} style={{ fontSize:'0.7rem' }}>
+                        {r.isApproved ? 'Published' : 'Pending'}
+                      </span>
+                    </td>
+                    <td>
                       <div style={{ display:'flex', gap:4 }}>
+                        {!r.isApproved && (
+                          <button className="btn btn-ghost btn-icon btn-sm" title="Approve & Publish Result"
+                            onClick={() => handleApproveResult(r)}
+                            style={{ color:'var(--accent-emerald)' }}>
+                            <CheckCircle2 size={15}/>
+                          </button>
+                        )}
                         <button className="btn btn-ghost btn-icon btn-sm" title="Allow Retake (Reset Score)"
                           onClick={() => handleDeleteResult(r)}
                           style={{ color:'var(--accent-purple)' }}>
@@ -495,11 +520,6 @@ function ResultsTab({ schoolId, schoolName, schoolProfile }) {
                           onClick={() => downloadDetailedResult(r, schoolName, schoolProfile)}
                           style={{ color:'var(--accent-blue)' }}>
                           <FileText size={15}/>
-                        </button>
-                        <button className="btn btn-ghost btn-icon btn-sm" title="Delete Result (Retake)"
-                          onClick={() => handleDeleteResult(r)}
-                          style={{ color:'var(--accent-rose)' }}>
-                          <Trash2 size={14}/>
                         </button>
                       </div>
                     </td>
@@ -633,7 +653,7 @@ export default function TeacherDashboard() {
           <div className="page-content">
             {activeTab==='exams'   && <ExamsTab exams={exams} setExams={setExams} showToast={showToast} results={results} schoolId={schoolId}/>}
             {activeTab==='create'  && <CreateExamTab teacherInfo={teacherInfo} schoolId={schoolId} showToast={showToast} onCreated={e=>{setExams(p=>[e,...p]); setActiveTab('exams');}}/>}
-            {activeTab === 'results' && <ResultsTab schoolId={schoolId} schoolName={schoolName} schoolProfile={schoolProfile}/>}
+            {activeTab === 'results' && <ResultsTab schoolId={schoolId} schoolName={schoolName} schoolProfile={schoolProfile} results={results} setResults={setResults} showToast={showToast} exams={exams}/>}
           </div>
         </main>
       </div>

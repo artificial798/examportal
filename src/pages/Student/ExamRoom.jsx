@@ -166,6 +166,7 @@ export default function ExamRoom() {
         totalMarks,
         percentage:  totalMarks > 0 ? Math.round((score/totalMarks)*100) : 0,
         answerSheet,
+        isApproved: false,
         submittedAt: serverTimestamp(),
       });
       setSubmitted(true);

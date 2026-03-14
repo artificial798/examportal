@@ -299,12 +299,12 @@ function StudentsTab({ schoolId, schoolSubjects, showToast }) {
 }
 
 /* ──────────────── OVERVIEW TAB ──────────────── */
-function OverviewTab({ school, teacherCount, studentCount }) {
+function OverviewTab({ school, teacherCount, studentCount, results, exams }) {
   const stats = [
     { label:'Teachers',  value: teacherCount, icon: GraduationCap, color:'purple', grad:'var(--grad-purple)' },
     { label:'Students',  value: studentCount, icon: Users,          color:'blue',   grad:'var(--grad-blue)'   },
-    { label:'Subjects',  value: (school?.subjects||[]).length, icon: BookOpen, color:'cyan', grad:'var(--grad-cyan)' },
-    { label:'Status',    value: school?.status||'Active', icon: Building2, color:'emerald', grad:'var(--grad-emerald)' },
+    { label:'Exams',     value: (exams||[]).length, icon: BookOpen, color:'cyan', grad:'var(--grad-cyan)' },
+    { label:'Submissions',value: (results||[]).length, icon: FileText, color:'emerald', grad:'var(--grad-emerald)' },
   ];
 
   return (
@@ -351,7 +351,7 @@ function OverviewTab({ school, teacherCount, studentCount }) {
 }
 
 /* ──────────────── CREATE EXAM TAB (School Admin) ──────────────── */
-function CreateExamTab({ schoolId, schoolSubjects, showToast }) {
+function CreateExamTab({ schoolId, schoolSubjects, showToast, onCreated }) {
   const [form, setForm] = useState({ title:'', subject:'', duration:60, instructions:'', passingMarks:40 });
   const [questions, setQuestions] = useState([{ text:'', options:['','','',''], correctAnswer:'', marks: 1 }]);
   const [saving, setSaving] = useState(false);
@@ -377,15 +377,17 @@ function CreateExamTab({ schoolId, schoolSubjects, showToast }) {
     if (!form.title.trim()) { showToast('Enter exam title.','error'); return; }
     setSaving(true);
     try {
-      await addDoc(collection(db,'exams'), { 
+      const examData = { 
         ...form, 
         schoolId, 
         questions, 
         totalMarks: questions.reduce((sum, q) => sum + (Number(q.marks) || 1), 0),
         status, 
         createdAt:serverTimestamp() 
-      });
+      };
+      const docRef = await addDoc(collection(db,'exams'), examData);
       showToast(status==='Active'?'Exam published!':'Draft saved.','success');
+      onCreated({ id: docRef.id, ...examData });
       setForm({title:'',subject:'',duration:60,instructions:'',passingMarks:40});
       setQuestions([{text:'',options:['','','',''],correctAnswer:'', marks: 1}]);
     } catch(e){ showToast('Error: '+e.message,'error'); }
@@ -751,25 +753,10 @@ function EditExamModal({ exam, onSave, onClose, showToast }) {
 }
 
 /* ──────────────── EXAMS TAB ──────────────── */
-function ExamsTab({ schoolId, showToast }) {
-  const [exams, setExams]       = useState([]);
-  const [results, setResults]   = useState([]);
-  const [loading, setLoading]   = useState(true);
+function ExamsTab({ schoolId, showToast, exams, setExams, results }) {
+  const [loading, setLoading]   = useState(false);
   const [editExam, setEditExam] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
-
-  useEffect(() => {
-    if (!schoolId) return;
-    (async () => {
-      const [eSnap, rSnap] = await Promise.all([
-        getDocs(query(collection(db,'exams'), where('schoolId','==',schoolId))),
-        getDocs(query(collection(db,'results'), where('schoolId','==',schoolId)))
-      ]);
-      setExams(eSnap.docs.map(d=>({id:d.id,...d.data()})));
-      setResults(rSnap.docs.map(d=>({id:d.id,...d.data()})));
-      setLoading(false);
-    })();
-  }, [schoolId]);
 
   const handleDelete = async (id) => {
     await deleteDoc(doc(db,'exams',id));
@@ -837,27 +824,12 @@ function ExamsTab({ schoolId, showToast }) {
 }
 
 /* ──────────────── MARKSHEET / RESULTS TAB ──────────────── */
-function MarksheetTab({ schoolId, schoolName, schoolProfile, showToast }) {
-  const [results,      setResults]      = useState([]);
-  const [exams,        setExams]        = useState([]);
-  const [loading,      setLoading]      = useState(true);
+function MarksheetTab({ schoolId, schoolName, schoolProfile, showToast, results, setResults, exams }) {
+  const [loading,      setLoading]      = useState(false);
   const [filterClass,  setFilterClass]  = useState('');
   const [filterSubject,setFilterSubject]= useState('');
   const [filterExam,   setFilterExam]   = useState('all');
   const [searchQuery,  setSearchQuery]  = useState('');
-
-  useEffect(() => {
-    if (!schoolId) return;
-    (async () => {
-      const [rSnap, eSnap] = await Promise.all([
-        getDocs(query(collection(db,'results'), where('schoolId','==',schoolId))),
-        getDocs(query(collection(db,'exams'),   where('schoolId','==',schoolId))),
-      ]);
-      setResults(rSnap.docs.map(d=>({id:d.id,...d.data()})));
-      setExams(eSnap.docs.map(d=>({id:d.id,...d.data()})));
-      setLoading(false);
-    })();
-  }, [schoolId]);
 
   const handleDeleteResult = async (res) => {
     if (!window.confirm(`Delete result for ${res.studentName}? This allows them to retake.`)) return;
@@ -866,6 +838,26 @@ function MarksheetTab({ schoolId, schoolName, schoolProfile, showToast }) {
       setResults(p => p.filter(r => r.id !== res.id));
       showToast('Result deleted. Student can now retake.', 'success');
     } catch (e) { showToast('Error: '+e.message, 'error'); }
+  };
+
+  const handleApproveResult = async (res) => {
+    try {
+      await updateDoc(doc(db, 'results', res.id), { isApproved: true });
+      setResults(p => p.map(r => r.id === res.id ? { ...r, isApproved: true } : r));
+      showToast(`Result for ${res.studentName} approved.`, 'success');
+    } catch (e) { showToast('Approval failed.', 'error'); }
+  };
+
+  const handleBulkApprove = async () => {
+    const unapproved = filtered.filter(r => !r.isApproved);
+    if (unapproved.length === 0) { showToast('No pending results to approve.', 'info'); return; }
+    if (!window.confirm(`Approve all ${unapproved.length} filtered results?`)) return;
+    
+    try {
+      await Promise.all(unapproved.map(r => updateDoc(doc(db, 'results', r.id), { isApproved: true })));
+      setResults(p => p.map(r => unapproved.some(u => u.id === r.id) ? { ...r, isApproved: true } : r));
+      showToast(`Approved ${unapproved.length} results!`, 'success');
+    } catch (e) { showToast('Bulk approval failed.', 'error'); }
   };
 
   const classes  = [...new Set(results.map(r=>r.class).filter(Boolean))].sort();
@@ -892,6 +884,12 @@ function MarksheetTab({ schoolId, schoolName, schoolProfile, showToast }) {
           <p style={{ fontSize:'0.85rem' }}>Download professional PDFs with school letterhead. Filter by class, subject, or exam.</p>
         </div>
         <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+          <button className="btn btn-ghost btn-sm"
+            onClick={handleBulkApprove}
+            disabled={filtered.filter(r=>!r.isApproved).length===0}
+            style={{ color:'var(--accent-emerald)', borderColor:'var(--accent-emerald)', background:'var(--accent-emerald-light)', gap:5 }}>
+            <CheckCircle2 size={14}/> Approve All
+          </button>
           <button className="btn btn-ghost btn-sm"
             onClick={() => downloadClassMarksheet(filtered, filterClass, filterSubject, schoolName, schoolProfile)}
             disabled={filtered.length===0}
@@ -949,7 +947,7 @@ function MarksheetTab({ schoolId, schoolName, schoolProfile, showToast }) {
       <div className="card" style={{ overflow:'hidden' }}>
         {loading ? <div style={{ padding:'2rem', textAlign:'center' }}>Loading…</div> : (
           <table className="data-table">
-            <thead><tr><th>#</th><th>Student</th><th>Class</th><th>Exam</th><th>Subject</th><th>Score</th><th>%</th><th>Grade</th><th>Result</th><th>Date</th><th>PDF</th></tr></thead>
+            <thead><tr><th>#</th><th>Student</th><th>Class</th><th>Exam</th><th>Subject</th><th>Score</th><th>%</th><th>Grade</th><th>Result</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>
               {filtered.length===0 && <tr><td colSpan={11}><div className="empty-state"><BarChart2 size={36}/><p>No results match the current filter.</p></div></td></tr>}
               {[...filtered].sort((a,b)=>(b.percentage||0)-(a.percentage||0)).map((r, idx)=>{
@@ -989,7 +987,19 @@ function MarksheetTab({ schoolId, schoolName, schoolProfile, showToast }) {
                     <td><span className={`badge ${pass?'success':'danger'}`}>{pass?'Pass':'Fail'}</span></td>
                     <td style={{ fontSize:'0.75rem', color:'var(--text-muted)' }}>{r.submittedAt?.toDate?r.submittedAt.toDate().toLocaleDateString('en-IN'):'—'}</td>
                     <td>
+                      <span className={`badge ${r.isApproved ? 'success' : 'warning'}`} style={{ fontSize:'0.7rem' }}>
+                        {r.isApproved ? 'Published' : 'Pending'}
+                      </span>
+                    </td>
+                    <td>
                       <div style={{ display:'flex', gap:4 }}>
+                        {!r.isApproved && (
+                          <button className="btn btn-ghost btn-icon btn-sm" title="Approve & Publish Result"
+                            onClick={()=>handleApproveResult(r)}
+                            style={{ color:'var(--accent-emerald)' }}>
+                            <CheckCircle2 size={15}/>
+                          </button>
+                        )}
                         <button className="btn btn-ghost btn-icon btn-sm" title="Download Report Card PDF"
                           onClick={()=>downloadDetailedResult(r, schoolName, schoolProfile)}
                           style={{ color:'var(--accent-blue)' }}>
@@ -1031,6 +1041,9 @@ export default function SchoolAdminDashboard() {
   const [school, setSchool] = useState(null);
   const [teacherCount, setTeacherCount] = useState(0);
   const [studentCount, setStudentCount] = useState(0);
+  const [exams, setExams] = useState([]);
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -1057,21 +1070,24 @@ export default function SchoolAdminDashboard() {
     if (!currentUser) return;
     (async () => {
       try {
-        // Find school where adminUid matches current user
         const schoolSnap = await getDocs(query(collection(db,'schools'), where('adminUid','==',currentUser.uid)));
         if (!schoolSnap.empty) {
           const schoolData = { id: schoolSnap.docs[0].id, ...schoolSnap.docs[0].data() };
           setSchool(schoolData);
 
-          // Load counts
-          const [tSnap, sSnap] = await Promise.all([
+          const [tSnap, sSnap, rSnap, eSnap] = await Promise.all([
             getDocs(query(collection(db,'teachers'), where('schoolId','==',schoolData.id))),
             getDocs(query(collection(db,'students'), where('schoolId','==',schoolData.id))),
+            getDocs(query(collection(db,'results'),  where('schoolId','==',schoolData.id))),
+            getDocs(query(collection(db,'exams'),    where('schoolId','==',schoolData.id))),
           ]);
           setTeacherCount(tSnap.size);
           setStudentCount(sSnap.size);
+          setResults(rSnap.docs.map(d=>({id:d.id,...d.data()})));
+          setExams(eSnap.docs.map(d=>({id:d.id,...d.data()})));
         }
       } catch(e) { console.error(e); }
+      setLoading(false);
     })();
   }, [currentUser]);
 
@@ -1134,12 +1150,12 @@ export default function SchoolAdminDashboard() {
           </div>
 
           <div className="page-content">
-            {activeTab === 'overview'   && <OverviewTab school={school} teacherCount={teacherCount} studentCount={studentCount}/>}
+            {activeTab === 'overview'   && <OverviewTab school={school} teacherCount={teacherCount} studentCount={studentCount} results={results} exams={exams}/>}
             {activeTab === 'teachers'   && <TeachersTab schoolId={school?.id} schoolSubjects={school?.subjects} showToast={showToast}/>}
             {activeTab === 'students'   && <StudentsTab schoolId={school?.id} schoolSubjects={school?.subjects} showToast={showToast}/>}
-            {activeTab === 'exams'      && <ExamsTab schoolId={school?.id} showToast={showToast}/>}
-            {activeTab === 'create'     && <CreateExamTab schoolId={school?.id} schoolSubjects={school?.subjects} showToast={showToast}/>}
-            {activeTab === 'marksheet'  && <MarksheetTab schoolId={school?.id} schoolName={school?.name||''} schoolProfile={schoolProfile} showToast={showToast}/>}
+            {activeTab === 'exams'      && <ExamsTab schoolId={school?.id} showToast={showToast} exams={exams} setExams={setExams} results={results}/>}
+            {activeTab === 'create'     && <CreateExamTab schoolId={school?.id} schoolSubjects={school?.subjects} showToast={showToast} onCreated={e=>{setExams(p=>[e,...p]); setActiveTab('exams');}}/>}
+            {activeTab === 'marksheet'  && <MarksheetTab schoolId={school?.id} schoolName={school?.name||''} schoolProfile={schoolProfile} showToast={showToast} results={results} setResults={setResults} exams={exams}/>}
             {activeTab === 'profile'    && <SchoolProfileTab school={school} showToast={showToast}/>}
           </div>
         </main>

@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FileText, Clock, Award, LogOut, User, BookOpen, CheckCircle2 } from 'lucide-react';
+import { FileText, Clock, Award, LogOut, User, BookOpen, CheckCircle2, Download } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '../../firebase/config';
 import { useAuth } from '../../contexts/AuthContext';
 import { collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore';
+import { downloadDetailedResult } from '../../services/pdfService';
 
 export default function StudentDashboard() {
   const navigate   = useNavigate();
@@ -197,14 +198,17 @@ export default function StudentDashboard() {
                             {r.submittedAt?.toDate ? r.submittedAt.toDate().toLocaleDateString('en-IN') : '—'}
                           </td>
                           <td>
-                             <button className="btn btn-ghost btn-sm" title="Download Report Card"
-                               onClick={() => {
-                                 const { downloadDetailedResult } = require('../../services/pdfService');
-                                 downloadDetailedResult(r, schoolProfile?.name || 'School', schoolProfile);
-                               }}
-                               style={{ color:'var(--accent-blue)', display:'flex', alignItems:'center', gap:5 }}>
-                               <Download size={14}/> Report
-                             </button>
+                             {r.isApproved ? (
+                               <button className="btn btn-ghost btn-sm" title="Download Report Card"
+                                 onClick={() => downloadDetailedResult(r, schoolProfile?.name || 'School', schoolProfile)}
+                                 style={{ color:'var(--accent-blue)', display:'flex', alignItems:'center', gap:5 }}>
+                                 <Download size={14}/> Report
+                               </button>
+                             ) : (
+                               <span style={{ fontSize:'0.75rem', fontWeight:600, color:'var(--text-muted)', display:'flex', alignItems:'center', gap:4, padding:'4px 8px', background:'var(--bg-tertiary)', borderRadius:6 }}>
+                                 <Clock size={12}/> Pending
+                               </span>
+                             )}
                           </td>
                         </tr>
                       );

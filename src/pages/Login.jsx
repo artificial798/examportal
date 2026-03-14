@@ -59,9 +59,9 @@ const ROLES = [
 export default function Login() {
   const [activeRole, setActiveRole] = useState('student');
   const [identifier, setIdentifier] = useState('');  // roll no / name / email
-  const [password, setPassword]     = useState('');
-  const [error, setError]           = useState('');
-  const [loading, setLoading]       = useState(false);
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { currentUser, userRole } = useAuth();
 
@@ -73,7 +73,7 @@ export default function Login() {
   }, [currentUser, userRole]);
 
   const redirectByRole = (role) => {
-    if (role === 'super_admin')  navigate('/superadmin');
+    if (role === 'super_admin') navigate('/superadmin');
     else if (role === 'school_admin') navigate('/schooladmin');
     else if (role === 'teacher') navigate('/teacher');
     else if (role === 'student') navigate('/student');
@@ -121,10 +121,10 @@ export default function Login() {
 
     } catch (err) {
       const msgs = {
-        'auth/wrong-password':      'Incorrect password. Please try again.',
-        'auth/invalid-credential':  'Invalid credentials. Please check and try again.',
-        'auth/user-not-found':      'No account found. Check your credentials.',
-        'auth/too-many-requests':   'Too many attempts. Please wait a moment.',
+        'auth/wrong-password': 'Incorrect password. Please try again.',
+        'auth/invalid-credential': 'Invalid credentials. Please check and try again.',
+        'auth/user-not-found': 'No account found. Check your credentials.',
+        'auth/too-many-requests': 'Too many attempts. Please wait a moment.',
         'auth/network-request-failed': 'Network error. Check your internet connection.',
       };
       setError(msgs[err.code] || `Error: ${err.message}`);
@@ -140,13 +140,13 @@ export default function Login() {
   };
 
   // Field 1 icon + label
-  const fieldIcon = activeRole === 'student'  ? <Hash size={16} />
+  const fieldIcon = activeRole === 'student' ? <Hash size={16} />
     : activeRole === 'teacher' ? <User size={16} />
-    : <Mail size={16} />;
+      : <Mail size={16} />;
 
-  const field1Label = activeRole === 'student'  ? 'Roll Number'
+  const field1Label = activeRole === 'student' ? 'Roll Number'
     : activeRole === 'teacher' ? 'Full Name'
-    : 'Email Address';
+      : 'Email Address';
 
   return (
     <div style={{
@@ -157,19 +157,19 @@ export default function Login() {
       justifyContent: 'center',
       padding: '1.5rem',
     }}>
-      <div style={{ width:'100%', maxWidth:480 }} className="animate-slide-up">
+      <div style={{ width: '100%', maxWidth: 480 }} className="animate-slide-up">
 
         {/* Header */}
-        <div style={{ textAlign:'center', marginBottom:'2rem' }}>
-          <div style={{ display:'inline-flex', padding:'0.9rem', background:'var(--grad-blue)', borderRadius:'var(--radius-xl)', marginBottom:'1rem', boxShadow:'0 8px 24px var(--accent-blue-glow)' }}>
+        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+          <div style={{ display: 'inline-flex', padding: '0.9rem', background: 'var(--grad-blue)', borderRadius: 'var(--radius-xl)', marginBottom: '1rem', boxShadow: '0 8px 24px var(--accent-blue-glow)' }}>
             <Shield size={32} color="#fff" />
           </div>
-          <h1 style={{ fontSize:'1.7rem', fontFamily:'Space Grotesk', marginBottom:'0.3rem' }} className="gradient-text-blue">ExamPortal</h1>
-          <p style={{ color:'var(--text-secondary)', fontSize:'0.875rem' }}>Select your role and sign in</p>
+          <h1 style={{ fontSize: '1.7rem', fontFamily: 'Space Grotesk', marginBottom: '0.3rem' }} className="gradient-text-blue">ExamPortal</h1>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Select your role and sign in</p>
         </div>
 
         {/* Role Selector Tabs */}
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8, marginBottom:'1.5rem', background:'#fff', padding:6, borderRadius:'var(--radius-lg)', boxShadow:'var(--shadow-sm)', border:'1px solid var(--border-light)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginBottom: '1.5rem', background: '#fff', padding: 6, borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--border-light)' }}>
           {ROLES.map(role => {
             const isActive = activeRole === role.id;
             return (
@@ -177,29 +177,29 @@ export default function Login() {
                 key={role.id}
                 onClick={() => switchRole(role.id)}
                 style={{
-                  display:'flex', flexDirection:'column', alignItems:'center', gap:6,
-                  padding:'0.75rem 0.5rem',
-                  borderRadius:'var(--radius-md)',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+                  padding: '0.75rem 0.5rem',
+                  borderRadius: 'var(--radius-md)',
                   border: isActive ? `1.5px solid ${role.color}30` : '1.5px solid transparent',
                   background: isActive ? role.lightBg : 'transparent',
-                  cursor:'pointer',
-                  transition:'all .2s',
-                  fontFamily:'inherit',
+                  cursor: 'pointer',
+                  transition: 'all .2s',
+                  fontFamily: 'inherit',
                 }}
               >
                 <div style={{
-                  width:36, height:36, borderRadius:'50%',
-                  display:'flex', alignItems:'center', justifyContent:'center',
+                  width: 36, height: 36, borderRadius: '50%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
                   background: isActive ? `${role.color}20` : 'var(--bg-tertiary)',
                   color: isActive ? role.color : 'var(--text-muted)',
-                  transition:'all .2s',
+                  transition: 'all .2s',
                 }}>
                   <role.icon size={18} />
                 </div>
                 <span style={{
-                  fontSize:'0.7rem', fontWeight: isActive ? 700 : 500,
+                  fontSize: '0.7rem', fontWeight: isActive ? 700 : 500,
                   color: isActive ? role.color : 'var(--text-muted)',
-                  textAlign:'center', lineHeight:1.2,
+                  textAlign: 'center', lineHeight: 1.2,
                 }}>
                   {role.label}
                 </span>
@@ -209,42 +209,42 @@ export default function Login() {
         </div>
 
         {/* Login Card */}
-        <div className="card" style={{ padding:'2rem', borderTop: `3px solid ${currentRoleCfg.color}` }}>
+        <div className="card" style={{ padding: '2rem', borderTop: `3px solid ${currentRoleCfg.color}` }}>
           {/* Card Header */}
-          <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:'1.5rem' }}>
-            <div style={{ width:44, height:44, borderRadius:'var(--radius-md)', background: currentRoleCfg.lightBg, display:'flex', alignItems:'center', justifyContent:'center', color: currentRoleCfg.color }}>
-              <currentRoleCfg.icon size={22}/>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '1.5rem' }}>
+            <div style={{ width: 44, height: 44, borderRadius: 'var(--radius-md)', background: currentRoleCfg.lightBg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: currentRoleCfg.color }}>
+              <currentRoleCfg.icon size={22} />
             </div>
             <div>
-              <h2 style={{ fontSize:'1.1rem', marginBottom:2 }}>{currentRoleCfg.label} Login</h2>
-              <p style={{ fontSize:'0.8rem' }}>
+              <h2 style={{ fontSize: '1.1rem', marginBottom: 2 }}>{currentRoleCfg.label} Login</h2>
+              <p style={{ fontSize: '0.8rem' }}>
                 {activeRole === 'student'
                   ? 'Enter your roll number and password'
                   : activeRole === 'teacher'
-                  ? 'Enter your name and portal password'
-                  : 'Enter your email and password'}
+                    ? 'Enter your name and portal password'
+                    : 'Enter your email and password'}
               </p>
             </div>
           </div>
 
           {/* Error */}
           {error && (
-            <div style={{ padding:'0.75rem 1rem', background:'var(--accent-rose-light)', color:'var(--accent-rose)', borderRadius:'var(--radius-md)', marginBottom:'1.25rem', border:'1px solid rgba(225,29,72,.15)', fontSize:'0.875rem', fontWeight:500 }}>
+            <div style={{ padding: '0.75rem 1rem', background: 'var(--accent-rose-light)', color: 'var(--accent-rose)', borderRadius: 'var(--radius-md)', marginBottom: '1.25rem', border: '1px solid rgba(225,29,72,.15)', fontSize: '0.875rem', fontWeight: 500 }}>
               ⚠ {error}
             </div>
           )}
 
-          <form onSubmit={handleLogin} style={{ display:'flex', flexDirection:'column', gap:'1rem' }}>
+          <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             {/* Field 1 */}
             <div>
               <label className="input-label">{field1Label}</label>
-              <div style={{ position:'relative' }}>
-                <span style={{ position:'absolute', top:'50%', left:12, transform:'translateY(-50%)', color:'var(--text-muted)', display:'flex' }}>
+              <div style={{ position: 'relative' }}>
+                <span style={{ position: 'absolute', top: '50%', left: 12, transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex' }}>
                   {fieldIcon}
                 </span>
                 <input
                   className="input-field"
-                  style={{ paddingLeft:38 }}
+                  style={{ paddingLeft: 38 }}
                   value={identifier}
                   onChange={e => setIdentifier(e.target.value)}
                   required
@@ -254,7 +254,7 @@ export default function Login() {
                 />
               </div>
               {activeRole === 'teacher' && (
-                <p style={{ fontSize:'0.75rem', color:'var(--text-muted)', marginTop:4 }}>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 4 }}>
                   Tip: Enter your full name exactly as registered, or your email address.
                 </p>
               )}
@@ -263,11 +263,11 @@ export default function Login() {
             {/* Password */}
             <div>
               <label className="input-label">Password</label>
-              <div style={{ position:'relative' }}>
-                <KeyRound size={16} style={{ position:'absolute', top:'50%', left:12, transform:'translateY(-50%)', color:'var(--text-muted)' }}/>
+              <div style={{ position: 'relative' }}>
+                <KeyRound size={16} style={{ position: 'absolute', top: '50%', left: 12, transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                 <input
                   className="input-field"
-                  style={{ paddingLeft:38 }}
+                  style={{ paddingLeft: 38 }}
                   type="password"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
@@ -283,24 +283,24 @@ export default function Login() {
               className="btn"
               disabled={loading}
               style={{
-                width:'100%',
-                padding:'0.75rem',
-                marginTop:'0.25rem',
-                fontSize:'0.95rem',
+                width: '100%',
+                padding: '0.75rem',
+                marginTop: '0.25rem',
+                fontSize: '0.95rem',
                 background: currentRoleCfg.grad,
-                color:'#fff',
+                color: '#fff',
                 boxShadow: `0 4px 15px ${currentRoleCfg.color}30`,
               }}
             >
               {loading
                 ? 'Verifying…'
-                : <><LogIn size={17}/> Sign In as {currentRoleCfg.label}</>}
+                : <><LogIn size={17} /> Sign In as {currentRoleCfg.label}</>}
             </button>
           </form>
         </div>
 
-        <p style={{ textAlign:'center', marginTop:'1.25rem', fontSize:'0.78rem', color:'var(--text-muted)' }}>
-          Exam Portal · Powered by Firebase · All rights reserved
+        <p style={{ textAlign: 'center', marginTop: '1.25rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+          Exam Portal · Powered by Makemyportal · All rights reserved
         </p>
       </div>
     </div>
