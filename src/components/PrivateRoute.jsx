@@ -16,13 +16,18 @@ export default function PrivateRoute({ children, allowedRoles }) {
   }
 
   if (!currentUser) {
-    return <Navigate softly to="/login" replace />;
+    const loginPath = allowedRoles && allowedRoles.includes('super_admin') 
+      ? '/login?role=super_admin' 
+      : '/login';
+    return <Navigate softly to={loginPath} replace />;
   }
 
   if (allowedRoles && !allowedRoles.includes(userRole)) {
     // If user doesn't have the required role, redirect them somewhere safe
-    // For now, redirect to login or a generic unauth page
-    return <Navigate softly to="/login" replace />;
+    const loginPath = allowedRoles && allowedRoles.includes('super_admin') 
+      ? '/login?role=super_admin' 
+      : '/login';
+    return <Navigate softly to={loginPath} replace />;
   }
 
   return children;

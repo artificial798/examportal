@@ -5,6 +5,7 @@ import PrivateRoute from './components/PrivateRoute';
 
 // Components
 import Login from './pages/Login';
+import LandingPage from './pages/LandingPage';
 import StudentDashboard from './pages/Student/StudentDashboard';
 import ExamRoom from './pages/Student/ExamRoom';
 import TeacherDashboard from './pages/Teacher/TeacherDashboard';
@@ -17,6 +18,7 @@ function App() {
     <AuthProvider>
       <Router>
         <Routes>
+          <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<Login />} />
           
           <Route path="/superadmin/*" element={
